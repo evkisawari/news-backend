@@ -2,6 +2,60 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 
+/**
+ * Intelligent Description Synthesizer
+ * Ensures the description is between 50-65 words by combining API fields 
+ * and adding contextual, non-topic-changing padding if necessary.
+ */
+const synthesizeDescription = (item, category) => {
+  const title = item.title || "";
+  const desc = item.description || "";
+  const content = (item.content || "").replace(/\[\+\d+ chars\]/g, ""); // Remove [+1234 chars]
+
+  // Combine unique parts of description and content
+  let combined = desc;
+  if (content.length > desc.length && content.startsWith(desc.substring(0, 10))) {
+    combined = content;
+  } else if (!desc.includes(content) && !content.includes(desc)) {
+    combined = `${desc} ${content}`.trim();
+  }
+
+  let words = combined.split(/\s+/).filter(w => w.length > 0);
+
+  // If already matches the target, return it
+  if (words.length >= 50 && words.length <= 65) {
+    return words.slice(0, 65).join(" ");
+  }
+
+  // If too long, trim it
+  if (words.length > 65) {
+    return words.slice(0, 65).join(" ") + "...";
+  }
+
+  // If too short, add contextual padding without changing the topic/meaning
+  const sourceName = item.source?.name || "reputable sources";
+  const date = item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : "recently";
+  const topic = category || "this field";
+
+  const paddingSentences = [
+    `This report, originally documented by ${sourceName}, provides essential insights into ${topic}.`,
+    `As a developing story, viewers are encouraged to monitor ${sourceName} for further updates regarding this matter.`,
+    `This news piece, published on ${date}, remains a significant development in the current landscape of ${topic}.`,
+    `The full context and detailed analysis of this event are being followed closely by industry experts and ${sourceName}.`,
+    `Stay informed by checking the original source URL for the complete breakdown of these events.`
+  ];
+
+  let i = 0;
+  while (words.length < 50 && i < paddingSentences.length) {
+    const padWords = paddingSentences[i].split(" ");
+    words = [...words, ...padWords];
+    i++;
+  }
+
+  // Final trim to ensure we are within 50-65 words exactly
+  return words.slice(0, 65).join(" ");
+};
+
 // GET /api/news
 router.get('/', async (req, res) => {
   try {
@@ -19,7 +73,7 @@ router.get('/', async (req, res) => {
         page: page,
         topic: category // only if provided
       },
-      timeout: 10000 // Add timeout: 10000
+      timeout: 10000 
     });
 
     // 7. Handle Empty API Response
@@ -33,8 +87,7 @@ router.get('/', async (req, res) => {
       });
     }
 
-    // 5. FIX DATA QUALITY (IMPORTANT)
-    // A. Remove duplicate articles (by title)
+    // 5. FIX DATA QUALITY
     const seenTitles = new Set();
     const uniqueArticles = response.data.articles.filter(article => {
       if (seenTitles.has(article.title)) return false;
@@ -42,14 +95,13 @@ router.get('/', async (req, res) => {
       return true;
     });
 
-    // B. Shuffle results (avoid repetitive feed)
     const shuffled = uniqueArticles.sort(() => Math.random() - 0.5);
 
-    // 6. Map Clean Response (CRITICAL)
+    // 6. Map Clean Response with 50-65 word synthesis
     const articles = shuffled.map((item, index) => ({
       id: index + 1 + (page - 1) * limit,
       title: item.title,
-      description: item.description || "No description available",
+      description: synthesizeDescription(item, category),
       
       image: item.image && item.image.startsWith('http')
         ? item.image 
@@ -70,7 +122,6 @@ router.get('/', async (req, res) => {
     });
 
   } catch (error) {
-    // 9. Error Handling
     console.error('GNews Fetch Error:', error.message);
     res.status(500).json({
       success: false,

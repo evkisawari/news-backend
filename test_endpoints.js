@@ -25,16 +25,23 @@ const runTests = async () => {
     console.log('Status:', rootRes.data.status);
     console.log('Endpoints:', rootRes.data.endpoints);
 
-    console.log('\n--- Testing News API /api/news (Technology) ---');
+    console.log('\n--- Testing News API (Description Word Count) ---');
     const newsRes1 = await axios.get(`${BASE_URL}/api/news?page=1&limit=5&category=technology`);
-    console.log('Count:', newsRes1.data.articles.length);
-    console.log('Total:', newsRes1.data.total);
+    const description = newsRes1.data.articles[0].description;
+    const wordCount = description.split(/\s+/).length;
+    console.log(`First Article Description: "${description.substring(0, 100)}..."`);
+    console.log(`Word Count: ${wordCount} (Target: 50-65)`);
     
+    if (wordCount >= 50 && wordCount <= 65) {
+      console.log('SUCCESS: Word count is within target range.');
+    } else {
+      console.error(`FAIL: Word count is ${wordCount}.`);
+    }
+
     if (newsRes1.data.articles.length > 0) {
-      console.log('Sample Article:', {
+      console.log('Sample Article Metadata:', {
         id: newsRes1.data.articles[0].id,
         title: newsRes1.data.articles[0].title,
-        image: newsRes1.data.articles[0].image,
         source: newsRes1.data.articles[0].source
       });
     }
