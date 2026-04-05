@@ -13,7 +13,12 @@ const test = async () => {
     console.log('\n--- Testing News API /api/news (Page 1) ---');
     const newsRes1 = await axios.get(`${BASE_URL}/api/news?page=1&limit=5`);
     console.log('Count:', newsRes1.data.articles.length);
-    console.log('First Title:', newsRes1.data.articles[0].title);
+    console.log('Total:', newsRes1.data.total);
+    console.log('Sample Article:', {
+        id: newsRes1.data.articles[0].id,
+        image: newsRes1.data.articles[0].image,
+        source: newsRes1.data.articles[0].source
+    });
 
     console.log('\n--- Testing News API /api/news (Page 2) ---');
     const newsRes2 = await axios.get(`${BASE_URL}/api/news?page=2&limit=5`);
