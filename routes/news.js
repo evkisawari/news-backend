@@ -56,35 +56,57 @@ const synthesizeDescription = (item, category) => {
   return words.slice(0, 65).join(" ");
 };
 
+// Simple In-Memory Cache
+const cache = {};
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
 // GET /api/news
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 10, category } = req.query;
+    const { page = 1, limit = 10, category, country = 'us', refresh } = req.query;
     
+    // 1. Generate unique cache key
+    const cacheKey = `${page}-${limit}-${category || 'all'}-${country}`;
+    const now = Date.now();
+
+    // 2. Check Cache (unless refresh is forced)
+    if (refresh !== 'true' && cache[cacheKey]) {
+      const { data, timestamp } = cache[cacheKey];
+      if (now - timestamp < CACHE_TTL) {
+        console.log(`CACHE HIT: ${cacheKey}`);
+        return res.json(data);
+      }
+      console.log(`CACHE EXPIRED: ${cacheKey}`);
+      delete cache[cacheKey];
+    }
+
     const GNEWS_API_KEY = process.env.GNEWS_API_KEY;
     const GNEWS_API_URL = 'https://gnews.io/api/v4/top-headlines';
 
-    // 4. Fetch from GNews API
+    // 3. Fetch from GNews API
+    console.log(`FETCHING FRESH DATA: ${cacheKey}`);
     const response = await axios.get(GNEWS_API_URL, {
       params: {
         token: GNEWS_API_KEY,
         lang: 'en',
         max: limit,
         page: page,
-        topic: category // only if provided
+        topic: category, // only if provided
+        country: country
       },
-      timeout: 10000 
+      timeout: 30000 // Increased to 30s for reliability
     });
 
-    // 7. Handle Empty API Response
+    // 4. Handle Empty API Response
     if (!response.data.articles || response.data.articles.length === 0) {
-      return res.json({
+      const emptyResult = {
         success: true,
         page: Number(page),
         limit: Number(limit),
         total: 0,
         articles: [],
-      });
+      };
+      return res.json(emptyResult);
     }
 
     // 5. FIX DATA QUALITY
@@ -112,14 +134,22 @@ router.get('/', async (req, res) => {
       publishedAt: item.publishedAt,
     }));
 
-    // 8. Final Response Format
-    res.json({
+    // 7. Final Response Format
+    const finalResponse = {
       success: true,
       page: Number(page),
       limit: Number(limit),
       total: response.data.totalArticles || articles.length,
       articles,
-    });
+    };
+
+    // 8. Store in Cache
+    cache[cacheKey] = {
+      data: finalResponse,
+      timestamp: now
+    };
+
+    res.json(finalResponse);
 
   } catch (error) {
     console.error('GNews Fetch Error:', error.message);

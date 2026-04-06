@@ -14,8 +14,13 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.json({
     status: "Backend working",
-    endpoints: ["/api/news?page=1&limit=10"]
+    endpoints: ["/api/news?page=1&limit=10", "/api/health"]
   });
+});
+
+// Health Check (Warmup) Endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ success: true, message: "Server is awake" });
 });
 
 // Use News Router
