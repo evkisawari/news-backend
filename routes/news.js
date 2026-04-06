@@ -63,10 +63,10 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 // GET /api/news
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 10, category, country = 'us', refresh, from, to } = req.query;
+    const { page = 1, limit = 10, category, country = 'us', refresh, from, to, type = 'us' } = req.query;
     
-    // 1. Generate unique cache key (including date range)
-    const cacheKey = `${page}-${limit}-${category || 'all'}-${country}-${from || 'none'}-${to || 'none'}`;
+    // 1. Generate unique cache key (including type)
+    const cacheKey = `${type}-${page}-${limit}-${category || 'all'}-${country}-${from || 'none'}-${to || 'none'}`;
     const now = Date.now();
 
     // 2. Check Cache (unless refresh is forced)
@@ -81,75 +81,107 @@ router.get('/', async (req, res) => {
     }
 
     const GNEWS_API_KEY = process.env.GNEWS_API_KEY;
-    const GNEWS_API_URL = 'https://gnews.io/api/v4/top-headlines';
+    const GNEWS_API_URL_HEADLINES = 'https://gnews.io/api/v4/top-headlines';
+    const GNEWS_API_URL_SEARCH = 'https://gnews.io/api/v4/search';
 
-    // 3. Fetch from GNews API
-    console.log(`FETCHING FRESH DATA: ${cacheKey}`);
-    const response = await axios.get(GNEWS_API_URL, {
-      params: {
-        token: GNEWS_API_KEY,
-        lang: 'en',
-        max: limit,
-        page: page,
-        topic: category, // only if provided
-        country: country,
-        from: from, // ISO 8601
-        to: to      // ISO 8601
-      },
-      timeout: 30000 // Increased for reliability during cold starts
-    });
+    let rawArticles = [];
+    let totalArticlesCount = 0;
 
-    // 4. Handle Empty API Response
-    if (!response.data.articles || response.data.articles.length === 0) {
-      const emptyResult = {
-        success: true,
-        page: Number(page),
-        limit: Number(limit),
-        total: 0,
-        articles: [],
-      };
-      return res.json(emptyResult);
+    // 3. Fetch Data based on Type
+    if (type === 'world') {
+      console.log(`FETCHING WORLD FEED: Parallel Requests (Headlines + Global Keywords)`);
+      
+      const [headlinesRes, searchRes] = await Promise.all([
+        axios.get(GNEWS_API_URL_HEADLINES, {
+          params: { token: GNEWS_API_KEY, lang: 'en', max: limit, page: page, from, to },
+          timeout: 30000
+        }),
+        axios.get(GNEWS_API_URL_SEARCH, {
+          params: { 
+            token: GNEWS_API_KEY, 
+            q: 'war OR conflict OR election OR government OR military OR sanctions OR diplomacy',
+            lang: 'en', 
+            max: limit, 
+            page: page, 
+            sortBy: 'publishedAt',
+            from, to 
+          },
+          timeout: 30000
+        })
+      ]);
+
+      // Combine and Interleave (approx 50/50 balance)
+      const hList = headlinesRes.data.articles || [];
+      const sList = searchRes.data.articles || [];
+      
+      let i = 0, j = 0;
+      while (i < hList.length || j < sList.length) {
+        if (i < hList.length) rawArticles.push(hList[i++]);
+        if (j < sList.length) rawArticles.push(sList[j++]);
+      }
+      totalArticlesCount = (headlinesRes.data.totalArticles || hList.length) + (searchRes.data.totalArticles || sList.length);
+
+    } else {
+      // type=us (Default)
+      console.log(`FETCHING US FEED: country=us`);
+      const response = await axios.get(GNEWS_API_URL_HEADLINES, {
+        params: {
+          token: GNEWS_API_KEY,
+          lang: 'en',
+          country: 'us',
+          category: category || 'general',
+          max: limit,
+          page: page,
+          from, to
+        },
+        timeout: 30000
+      });
+      rawArticles = response.data.articles || [];
+      totalArticlesCount = response.data.totalArticles || rawArticles.length;
     }
 
-    // 5. FIX DATA QUALITY
+    // 4. Handle Empty Response
+    if (rawArticles.length === 0) {
+      return res.json({ success: true, page: Number(page), limit: Number(limit), total: 0, articles: [] });
+    }
+
+    // 5. FIX DATA QUALITY (Strict Deduplication: Title + URL)
     const seenTitles = new Set();
-    const uniqueArticles = response.data.articles.filter(article => {
-      if (seenTitles.has(article.title)) return false;
-      seenTitles.add(article.title);
+    const seenUrls = new Set();
+    
+    const uniqueArticles = rawArticles.filter(article => {
+      const normalizedTitle = (article.title || "").toLowerCase().trim();
+      const normalizedUrl = (article.url || "").toLowerCase().trim();
+      
+      if (seenTitles.has(normalizedTitle) || seenUrls.has(normalizedUrl)) return false;
+      
+      seenTitles.add(normalizedTitle);
+      seenUrls.add(normalizedUrl);
       return true;
     });
 
-    const shuffled = uniqueArticles.sort(() => Math.random() - 0.5);
-
-    // 6. Map Clean Response with 50-65 word synthesis
-    const articles = shuffled.map((item, index) => ({
+    // 6. Map and Interleave limit
+    const processedArticles = uniqueArticles.slice(0, limit).map((item, index) => ({
       id: index + 1 + (page - 1) * limit,
       title: item.title,
-      description: synthesizeDescription(item, category),
-      
-      image: item.image && item.image.startsWith('http')
-        ? item.image 
-        : null,
-
+      description: synthesizeDescription(item, category || (type === 'world' ? 'Global Events' : 'US News')),
+      image: item.image && item.image.startsWith('http') ? item.image : null,
       url: item.url,
       source: item.source?.name || "Unknown",
       publishedAt: item.publishedAt,
     }));
 
-    // 7. Final Response Format
     const finalResponse = {
       success: true,
+      type,
       page: Number(page),
       limit: Number(limit),
-      total: response.data.totalArticles || articles.length,
-      articles,
+      total: totalArticlesCount,
+      articles: processedArticles,
     };
 
-    // 8. Store in Cache
-    cache[cacheKey] = {
-      data: finalResponse,
-      timestamp: now
-    };
+    // 7. Store in Cache
+    cache[cacheKey] = { data: finalResponse, timestamp: now };
 
     res.json(finalResponse);
 
