@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const OpenAI = require('openai');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // 1. Simple In-Memory Cache
 const cache = {};
@@ -9,6 +14,9 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 // 2. Storage for Source-Level Cache (GNews API calls)
 const sourceCache = {};
 const SOURCE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// 3. Storage for AI Summaries Cache (To avoid re-summarizing the same URL)
+const summaryCache = {};
 
 // 3. High-Quality Strategy Configuration
 const CATEGORY_STRATEGIES = {
@@ -69,6 +77,59 @@ async function fetchGNews(endpoint, params) {
 }
 
 /**
+ * AI Summarizer (Inshorts-Style 55-65 words)
+ */
+async function requestAISummary(article) {
+  const url = article.url;
+  if (summaryCache[url]) return summaryCache[url];
+
+  const fullText = `${article.title}. ${article.description || ""} ${article.content || ""}`.trim();
+  if (fullText.length < 50) return null; // Too short to summarize meaningfully
+
+  try {
+    console.log(`REQUESTING AI SUMMARY: ${article.title.substring(0, 30)}...`);
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5-nano",
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional news editor creating summaries for a mobile news app like Inshorts.
+Task: Summarize the given news article into a concise, clear, and engaging summary suitable for fast reading on mobile.
+Rules:
+- Target length: 55–65 words (do not force exactly 60)
+- Focus only on the most important facts (who, what, where, why)
+- Do NOT include opinions, speculation, or filler
+- Use simple, clean, and neutral language
+- Write in a single paragraph
+- Ensure the summary is complete and meaningful on its own
+- Avoid repeating the headline
+- Do NOT mention “the article says” or similar phrases
+Quality Guidelines:
+- Prefer clarity over compression
+- Do not cut sentences unnaturally
+- Maintain logical flow and readability
+- If the content is unclear or incomplete, return a short factual summary without guessing
+Output Format: Return ONLY the summary text. No extra explanation.`
+        },
+        { role: "user", content: fullText }
+      ],
+      max_tokens: 150,
+      timeout: 5000 // 5s timeout per article
+    });
+
+    const summary = completion.choices[0]?.message?.content?.trim();
+    if (summary) {
+      summaryCache[url] = summary;
+      return summary;
+    }
+    return null;
+  } catch (error) {
+    console.error(`AI SUMMARY FAILED: ${article.title.substring(0, 30)}... | Error: ${error.message}`);
+    return null;
+  }
+}
+
+/**
  * Soft Boost Logic: Increases priority score for articles with specific keywords in the title
  */
 function applySoftBoost(articles, keywords) {
@@ -87,7 +148,7 @@ function applySoftBoost(articles, keywords) {
 }
 
 /**
- * Description Synthesizer (50-65 words)
+ * Description Synthesizer Fallback (50-65 words)
  */
 function synthesizeDescription(article, category) {
   const content = article.description || article.content || "Breaking news update.";
@@ -115,7 +176,6 @@ router.get('/', async (req, res) => {
     }
 
     const strategy = CATEGORY_STRATEGIES[type] || CATEGORY_STRATEGIES.us;
-    console.log(`EXECUTING STRATEGY: ${type} (${strategy.type})`);
 
     let rawList = [];
     let totalCountEstimate = 0;
@@ -144,7 +204,6 @@ router.get('/', async (req, res) => {
       const hRes = await fetchGNews('headlines', { ...strategy.headlines, page, max: limit, from, to });
       rawList = hRes.articles;
       if (rawList.length < 5) {
-        console.log(`DYNAMIC FALLBACK: Low result count (${rawList.length}), adding search items`);
         const sRes = await fetchGNews('search', { ...strategy.search, page, max: limit, from, to });
         rawList = [...rawList, ...sRes.articles];
       }
@@ -172,7 +231,6 @@ router.get('/', async (req, res) => {
 
     // 3. Fallback to General Headlines (If total < 5)
     if (uniqueList.length < 5 && type !== 'us') {
-      console.log(`TOTAL FALLBACK: Category result < 5, fetching General headlines`);
       const general = await fetchGNews('headlines', { lang: 'en', page: 1, max: 10 });
       for (const entry of general.articles) {
         if (uniqueList.length >= limit) break;
@@ -184,15 +242,19 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // 4. Final Transform and Limit
-    const processed = uniqueList.slice(0, limit).map((item, idx) => ({
-      id: idx + 1 + (page - 1) * limit,
-      title: item.title,
-      description: synthesizeDescription(item, type),
-      image: item.image && item.image.startsWith('http') ? item.image : null,
-      url: item.url,
-      source: item.source?.name || "Unknown",
-      publishedAt: item.publishedAt,
+    // 4. Final Transform and AI Summarization (Parallel)
+    const processed = await Promise.all(uniqueList.slice(0, limit).map(async (item, idx) => {
+      const aiSummary = await requestAISummary(item);
+      
+      return {
+        id: idx + 1 + (page - 1) * limit,
+        title: item.title,
+        description: aiSummary || synthesizeDescription(item, type),
+        image: item.image && item.image.startsWith('http') ? item.image : null,
+        url: item.url,
+        source: item.source?.name || "Unknown",
+        publishedAt: item.publishedAt,
+      };
     }));
 
     const finalResult = {
