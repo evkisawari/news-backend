@@ -38,21 +38,39 @@ const BOOST_KEYWORDS = {
 };
 
 const RSS_SOURCES = [
-  { name: 'BBC News', url: 'http://feeds.bbci.co.uk/news/rss.xml', category: 'world', weight: 1.5 },
-  { name: 'Reuters', url: 'https://feeds.reuters.com/reuters/topNews', category: 'world', weight: 1.5 },
-  { name: 'AP News', url: 'https://apnews.com/apf-topnews?format=xml', category: 'world', weight: 1.5 },
-  { name: 'Guardian', url: 'https://www.theguardian.com/world/rss', category: 'world', weight: 1.3 },
-  { name: 'CNN', url: 'http://rss.cnn.com/rss/edition.rss', category: 'world', weight: 1.2 },
-  { name: 'NYT', url: 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml', category: 'us', weight: 1.5 },
-  { name: 'Fox News', url: 'https://moxie.foxnews.com/google-publisher/latest.xml', category: 'us', weight: 1.2 },
-  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', category: 'technology', weight: 1.4 },
-  { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', category: 'technology', weight: 1.3 },
-  { name: 'Wired', url: 'https://www.wired.com/feed/rss', category: 'technology', weight: 1.3 },
-  { name: 'Hacker News', url: 'https://hnrss.org/frontpage', category: 'technology', weight: 1.1 },
-  { name: 'CNBC', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', category: 'finance', weight: 1.4 },
-  { name: 'Bloomberg', url: 'https://feeds.bloomberg.com/markets/news.rss', category: 'finance', weight: 1.5 },
-  { name: 'Google News', url: 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en', category: 'us', weight: 1.0 },
-  { name: 'Google News Tech', url: 'https://news.google.com/rss/search?q=technology', category: 'technology', weight: 1.0 }
+  // ── World ──────────────────────────────────────────────────
+  { name: 'BBC News',   url: 'http://feeds.bbci.co.uk/news/rss.xml',                         category: 'world',      weight: 1.5 },
+  { name: 'Reuters',   url: 'https://feeds.reuters.com/reuters/topNews',                     category: 'world',      weight: 1.5 },
+  { name: 'AP News',   url: 'https://apnews.com/apf-topnews?format=xml',                     category: 'world',      weight: 1.5 },
+  { name: 'Guardian',  url: 'https://www.theguardian.com/world/rss',                         category: 'world',      weight: 1.3 },
+  { name: 'CNN',       url: 'http://rss.cnn.com/rss/edition.rss',                            category: 'world',      weight: 1.2 },
+  // ── US ─────────────────────────────────────────────────────
+  { name: 'NYT',       url: 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',     category: 'us',         weight: 1.5 },
+  { name: 'Fox News',  url: 'https://moxie.foxnews.com/google-publisher/latest.xml',         category: 'us',         weight: 1.2 },
+  { name: 'Google News', url: 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en',      category: 'us',         weight: 1.0 },
+  // ── Technology ─────────────────────────────────────────────
+  { name: 'TechCrunch',      url: 'https://techcrunch.com/feed/',                            category: 'technology', weight: 1.4 },
+  { name: 'The Verge',       url: 'https://www.theverge.com/rss/index.xml',                  category: 'technology', weight: 1.3 },
+  { name: 'Wired',           url: 'https://www.wired.com/feed/rss',                          category: 'technology', weight: 1.3 },
+  { name: 'Hacker News',     url: 'https://hnrss.org/frontpage',                             category: 'technology', weight: 1.1 },
+  { name: 'Google News Tech', url: 'https://news.google.com/rss/search?q=technology',        category: 'technology', weight: 1.0 },
+  { name: 'Ars Technica',    url: 'https://feeds.arstechnica.com/arstechnica/index',         category: 'technology', weight: 1.2 },
+  // ── Business ───────────────────────────────────────────────
+  { name: 'CNBC',            url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html',   category: 'business',   weight: 1.4 },
+  { name: 'Bloomberg',       url: 'https://feeds.bloomberg.com/markets/news.rss',            category: 'business',   weight: 1.5 },
+  { name: 'Forbes',          url: 'https://www.forbes.com/business/feed2/',             category: 'business',   weight: 1.2 },
+  { name: 'Business Insider', url: 'https://feeds.businessinsider.com/custom/all',       category: 'business',   weight: 1.3 },
+  { name: 'Google Business',  url: 'https://news.google.com/rss/search?q=business+finance', category: 'business',   weight: 1.0 },
+  // ── Lifestyle ──────────────────────────────────────────────
+  { name: 'BBC Lifestyle',    url: 'http://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml',      category: 'lifestyle', weight: 1.3 },
+  { name: 'NYT Style',        url: 'https://rss.nytimes.com/services/xml/rss/nyt/FashionandStyle.xml', category: 'lifestyle', weight: 1.2 },
+  { name: 'EatingWell',       url: 'https://www.eatingwell.com/feeds/all',                             category: 'lifestyle', weight: 1.1 },
+  { name: 'Google Lifestyle',  url: 'https://news.google.com/rss/search?q=lifestyle+health',           category: 'lifestyle', weight: 1.0 },
+  // ── Science ────────────────────────────────────────────────
+  { name: 'NASA',             url: 'https://www.nasa.gov/rss/dyn/breaking_news.rss',         category: 'science',    weight: 1.4 },
+  { name: 'Science Daily',    url: 'https://www.sciencedaily.com/rss/all.xml',               category: 'science',    weight: 1.3 },
+  { name: 'New Scientist',    url: 'https://www.newscientist.com/feed/home/?cmpid=RSS|NSNS',  category: 'science',   weight: 1.2 },
+  { name: 'Google Science',   url: 'https://news.google.com/rss/search?q=science+research',  category: 'science',   weight: 1.0 },
 ];
 
 const RSS_HEADERS = {
@@ -571,10 +589,18 @@ async function buildOrGetPool(type) {
     return sessionPools.get(poolKey).articles;
   }
 
-  // 2. Read from local Mega-Pool DB
+  // Category aliasing: map frontend names to internal categories
+  const CATEGORY_ALIASES = {
+    'finance':    'business',
+    'sports':     'world',    // fallback until sports sources are added
+    'general':    'us',
+  };
+  const resolvedType = CATEGORY_ALIASES[type] || type;
+
+  // 2. Read from local Mega-Pool DB with resolved category
   const db = loadDB();
   const pool = db
-    .filter(a => a.category === type || type === 'us') // default to us
+    .filter(a => a.category === resolvedType || resolvedType === 'us')
     .slice(0, 100);
 
   if (pool.length > 0) {
