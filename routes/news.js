@@ -55,7 +55,15 @@ const RSS_SOURCES = [
   { name: 'Google News Tech', url: 'https://news.google.com/rss/search?q=technology', category: 'technology', weight: 1.0 }
 ];
 
+const RSS_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Cache-Control': 'no-cache'
+};
+
 const parser = new Parser({
+  headers: RSS_HEADERS,
   customFields: {
     item: [
       ['media:content', 'media', {keepArray: true}],
@@ -452,7 +460,13 @@ function normalizeRSSItem(item, source) {
 // ─────────────────────────────────────────────
 async function fetchSource(source) {
   try {
-    const feed = await parser.parseURL(source.url);
+    // Use axios with proper headers to avoid 403 Forbidden
+    const response = await axios.get(source.url, {
+      headers: RSS_HEADERS,
+      timeout: 10000,
+      responseType: 'text'
+    });
+    const feed = await parser.parseString(response.data);
     return feed.items.map(item => normalizeRSSItem(item, source));
   } catch (err) {
     console.error(`[RSS ERROR] ${source.name}:`, err.message);
