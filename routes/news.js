@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const OpenAI = require('openai');
+const crypto = require('crypto');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -17,6 +18,13 @@ const SOURCE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 // 3. Storage for AI Summaries Cache (To avoid re-summarizing the same URL)
 const summaryCache = {};
+
+/**
+ * Utility to generate stable MD5 hashes
+ */
+function generateHash(data) {
+  return crypto.createHash('md5').update(data).digest('hex');
+}
 
 // 3. High-Quality Strategy Configuration
 const CATEGORY_STRATEGIES = {
@@ -78,25 +86,28 @@ async function fetchGNews(endpoint, params) {
 
 /**
  * AI Summarizer (Inshorts-Style 55-65 words)
+ * Uses the new OpenAI Responses API for GPT-5 class models
  */
 async function requestAISummary(article) {
   const url = article.url;
   if (summaryCache[url]) return summaryCache[url];
 
   const fullText = `${article.title}. ${article.description || ""} ${article.content || ""}`.trim();
-  if (fullText.length < 50) return null; // Too short to summarize meaningfully
+  if (fullText.length < 50) return null; 
 
   try {
     console.log(`REQUESTING AI SUMMARY: ${article.title.substring(0, 30)}...`);
-    const completion = await openai.chat.completions.create({
+    
+    // Using the modern Responses API as per GPT-5 specifications
+    const response = await openai.responses.create({
       model: "gpt-5-nano",
-      messages: [
-        {
-          role: "system",
-          content: `You are a professional news editor creating summaries for a mobile news app like Inshorts.
-Task: Summarize the given news article into a concise, clear, and engaging summary suitable for fast reading on mobile.
+      input: `You are a professional news editor creating summaries for a mobile news app like Inshorts.
+
+Task:
+Summarize the given news article into a concise, clear, and engaging summary suitable for fast reading on mobile.
+
 Rules:
-- Target length: 55–65 words (do not force exactly 60)
+- Target length: 55–65 words
 - Focus only on the most important facts (who, what, where, why)
 - Do NOT include opinions, speculation, or filler
 - Use simple, clean, and neutral language
@@ -104,20 +115,16 @@ Rules:
 - Ensure the summary is complete and meaningful on its own
 - Avoid repeating the headline
 - Do NOT mention “the article says” or similar phrases
-Quality Guidelines:
-- Prefer clarity over compression
-- Do not cut sentences unnaturally
-- Maintain logical flow and readability
-- If the content is unclear or incomplete, return a short factual summary without guessing
-Output Format: Return ONLY the summary text. No extra explanation.`
-        },
-        { role: "user", content: fullText }
-      ],
-      max_tokens: 150,
-      timeout: 5000 // 5s timeout per article
-    });
 
-    const summary = completion.choices[0]?.message?.content?.trim();
+Output Format:
+Return ONLY the summary text. No extra explanation.
+
+Article Fragment:
+${fullText}`,
+      store: true
+    }, { timeout: 8000 }); 
+
+    const summary = response.output_text?.trim();
     if (summary) {
       summaryCache[url] = summary;
       return summary;
@@ -156,7 +163,7 @@ function synthesizeDescription(article, category) {
   let baseText = parts.length > 35 ? parts.slice(0, 35).join(" ") + "..." : parts.join(" ");
   
   const ctx = category ? category.charAt(0).toUpperCase() + category.slice(1) : "General News";
-  const extra = ` In ${ctx} context, this update highlights critical developments that could significantly impact the current ${ctx.toLowerCase()} landscape. Analysts suggest these events are part of a broader shift in the sector.`;
+  const extra = ` In ${ctx} context, this update highlights critical developments that could significantly impact the current ${ctx.toLowerCase()} landscape. Analysts suggest these incidents are part of a broader shift in the sector.`;
   
   const final = `${baseText} ${extra}`;
   const finalParts = final.split(" ").filter(w => w.length > 0);
@@ -212,44 +219,57 @@ router.get('/', async (req, res) => {
 
     // --- SHARED PROCESSING PIPELINE ---
 
-    // 1. Deduplication (Title + URL)
-    const seenTitles = new Set();
-    const seenUrls = new Set();
-    let uniqueList = rawList.filter(article => {
-      const nTitle = (article.title || "").toLowerCase().trim();
-      const nUrl = (article.url || "").toLowerCase().trim();
-      if (seenTitles.has(nTitle) || seenUrls.has(nUrl)) return false;
-      seenTitles.add(nTitle);
-      seenUrls.add(nUrl);
-      return true;
+    // 1. Stable Pre-processing and Deduplication
+    const seenFingerprints = new Set();
+    const finalArticleList = [];
+
+    rawList.forEach(article => {
+      const stableId = generateHash(article.url || article.title + article.publishedAt);
+      const articleText = (article.description || article.content || "").substring(0, 300).toLowerCase().trim();
+      const fingerprint = generateHash(article.title.toLowerCase() + articleText);
+
+      if (!seenFingerprints.has(fingerprint)) {
+        seenFingerprints.add(fingerprint);
+        finalArticleList.push({ ...article, stableId, fingerprint });
+      }
     });
 
     // 2. Soft Boost (World only)
+    let processedList = finalArticleList;
     if (type === 'world' && strategy.boostKeywords) {
-      uniqueList = applySoftBoost(uniqueList, strategy.boostKeywords);
+      processedList = applySoftBoost(finalArticleList, strategy.boostKeywords);
     }
 
     // 3. Fallback to General Headlines (If total < 5)
-    if (uniqueList.length < 5 && type !== 'us') {
+    if (processedList.length < 5 && type !== 'us') {
       const general = await fetchGNews('headlines', { lang: 'en', page: 1, max: 10 });
       for (const entry of general.articles) {
-        if (uniqueList.length >= limit) break;
-        const nTitle = (entry.title || "").toLowerCase().trim();
-        if (!seenTitles.has(nTitle)) {
-           uniqueList.push(entry);
-           seenTitles.add(nTitle);
+        if (processedList.length >= limit) break;
+        const entryText = (entry.description || entry.content || "").substring(0, 300).toLowerCase().trim();
+        const entryFingerprint = generateHash(entry.title.toLowerCase() + entryText);
+        
+        if (!seenFingerprints.has(entryFingerprint)) {
+           const stableId = generateHash(entry.url || entry.title + entry.publishedAt);
+           processedList.push({ ...entry, stableId, fingerprint: entryFingerprint });
+           seenFingerprints.add(entryFingerprint);
         }
       }
     }
 
     // 4. Final Transform and AI Summarization (Parallel)
-    const processed = await Promise.all(uniqueList.slice(0, limit).map(async (item, idx) => {
+    console.log(`PRE-TRANSFORM: Processing ${processedList.length} unique articles (Type: ${type})`);
+    
+    const processed = await Promise.all(processedList.slice(0, limit).map(async (item) => {
       const aiSummary = await requestAISummary(item);
+      const description = aiSummary || synthesizeDescription(item, type);
+      
+      console.log(`DEBUG: AI Summary ${aiSummary ? 'SUCCESS' : 'FALLBACK'} for ${item.title.substring(0, 30)}...`);
       
       return {
-        id: idx + 1 + (page - 1) * limit,
+        id: item.stableId,
         title: item.title,
-        description: aiSummary || synthesizeDescription(item, type),
+        description: description,
+        aiSummary: aiSummary || null,
         image: item.image && item.image.startsWith('http') ? item.image : null,
         url: item.url,
         source: item.source?.name || "Unknown",
