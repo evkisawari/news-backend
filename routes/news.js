@@ -63,10 +63,10 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 // GET /api/news
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 10, category, country = 'us', refresh } = req.query;
+    const { page = 1, limit = 10, category, country = 'us', refresh, from, to } = req.query;
     
-    // 1. Generate unique cache key
-    const cacheKey = `${page}-${limit}-${category || 'all'}-${country}`;
+    // 1. Generate unique cache key (including date range)
+    const cacheKey = `${page}-${limit}-${category || 'all'}-${country}-${from || 'none'}-${to || 'none'}`;
     const now = Date.now();
 
     // 2. Check Cache (unless refresh is forced)
@@ -92,9 +92,11 @@ router.get('/', async (req, res) => {
         max: limit,
         page: page,
         topic: category, // only if provided
-        country: country
+        country: country,
+        from: from, // ISO 8601
+        to: to      // ISO 8601
       },
-      timeout: 30000 // Increased to 30s for reliability
+      timeout: 30000 // Increased for reliability during cold starts
     });
 
     // 4. Handle Empty API Response
