@@ -72,6 +72,7 @@
     "range-parser": "^1.2.1",
     "raw-body": "^3.0.2",
     "router": "^2.2.0",
+    "rss-parser": "^3.13.0",
     "safer-buffer": "^2.1.2",
     "send": "^1.2.1",
     "serve-static": "^2.2.1",
@@ -88,6 +89,8 @@
     "wrappy": "^1.0.2"
   },
   "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

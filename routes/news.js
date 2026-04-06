@@ -5,6 +5,7 @@ const OpenAI = require('openai');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const Parser = require('rss-parser');
 
 const DB_PATH = path.join(__dirname, '../db.json');
 
@@ -36,17 +37,34 @@ const BOOST_KEYWORDS = {
   us:         ['president', 'congress', 'supreme court', 'fda', 'shooting'],
 };
 
-const CATEGORY_STRATEGIES = {
-  us:         { headlines: { country: 'us', category: 'general', lang: 'en' } },
-  world:      { headlines: { lang: 'en' },
-                search:    { q: 'war OR conflict OR election OR government OR military OR sanctions OR diplomacy', sortBy: 'publishedAt' } },
-  finance:    { headlines: { category: 'business', lang: 'en' },
-                search:    { q: 'market OR stocks OR economy OR inflation OR earnings', sortBy: 'publishedAt' } },
-  technology: { headlines: { category: 'technology', lang: 'en' },
-                search:    { q: 'AI OR software OR startup OR cybersecurity OR "big tech"', sortBy: 'publishedAt' } },
-  lifestyle:  { headlines: { category: 'entertainment', lang: 'en' },
-                search:    { q: 'travel OR food OR health OR fitness OR fashion', sortBy: 'publishedAt' } },
-};
+const RSS_SOURCES = [
+  { name: 'BBC News', url: 'http://feeds.bbci.co.uk/news/rss.xml', category: 'world', weight: 1.5 },
+  { name: 'Reuters', url: 'https://feeds.reuters.com/reuters/topNews', category: 'world', weight: 1.5 },
+  { name: 'AP News', url: 'https://apnews.com/apf-topnews?format=xml', category: 'world', weight: 1.5 },
+  { name: 'Guardian', url: 'https://www.theguardian.com/world/rss', category: 'world', weight: 1.3 },
+  { name: 'CNN', url: 'http://rss.cnn.com/rss/edition.rss', category: 'world', weight: 1.2 },
+  { name: 'NYT', url: 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml', category: 'us', weight: 1.5 },
+  { name: 'Fox News', url: 'https://moxie.foxnews.com/google-publisher/latest.xml', category: 'us', weight: 1.2 },
+  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', category: 'technology', weight: 1.4 },
+  { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', category: 'technology', weight: 1.3 },
+  { name: 'Wired', url: 'https://www.wired.com/feed/rss', category: 'technology', weight: 1.3 },
+  { name: 'Hacker News', url: 'https://hnrss.org/frontpage', category: 'technology', weight: 1.1 },
+  { name: 'CNBC', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', category: 'finance', weight: 1.4 },
+  { name: 'Bloomberg', url: 'https://feeds.bloomberg.com/markets/news.rss', category: 'finance', weight: 1.5 },
+  { name: 'Google News', url: 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en', category: 'us', weight: 1.0 },
+  { name: 'Google News Tech', url: 'https://news.google.com/rss/search?q=technology', category: 'technology', weight: 1.0 }
+];
+
+const parser = new Parser({
+  customFields: {
+    item: [
+      ['media:content', 'media', {keepArray: true}],
+      ['media:thumbnail', 'mediaThumbnail', {keepArray: true}],
+      ['media:group', 'mediaGroup', {keepArray: true}],
+      ['enclosure', 'enclosure', {keepArray: true}]
+    ]
+  }
+});
 
 // ─────────────────────────────────────────────
 // CACHE STORES
@@ -150,6 +168,164 @@ ${fullText.substring(0, 1500)}`,
 }
 
 // ─────────────────────────────────────────────
+// UTILITY: CONTENT VALIDATION
+// ─────────────────────────────────────────────
+function isEnglish(text) {
+  if (!text) return true;
+  // Basic ASCII check — rejects titles with too many non-English characters
+  const nonAsciis = text.match(/[^\x00-\x7F]/g) || [];
+  return (nonAsciis.length / text.length) < 0.1;
+}
+
+function cleanArticleURL(urlStr) {
+  try {
+    const url = new URL(urlStr);
+    // Strip common tracking parameters
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'ref', 'source'].forEach(p => url.searchParams.delete(p));
+    
+    const domain = url.hostname.toLowerCase();
+    const pathname = url.pathname.toLowerCase();
+
+    // Reject Known Garbage (Image CDNs, short-links, and absolute redirectors)
+    const garbageDomains = ['guim.co.uk', 'cnn.it', 'bit.ly', 'tinyurl.com', 'feeds.reuters.com'];
+    if (garbageDomains.some(d => domain.includes(d))) return null;
+    
+    // Reject non-HTML extensions
+    if (pathname.match(/\.(jpg|jpeg|png|gif|webp|svg|mp4|mp3|pdf|txt|xml|json)$/)) return null;
+
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function getFallbackImage(source) {
+  const map = {
+    'BBC News':     'https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/BBC_News_2019.svg/1200px-BBC_News_2019.svg.png',
+    'Reuters':     'https://www.reuters.com/pf/resources/images/reuters/logo-vertical.png?d=122',
+    'AP News':      'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Associated_Press_logo_2012.svg/1200px-Associated_Press_logo_2012.svg.png',
+    'Guardian':     'https://assets.guim.co.uk/images/favicons/og-image.png',
+    'CNN':          'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/CNN.svg/1200px-CNN.svg.png',
+    'NYT':          'https://static01.nyt.com/images/misc/NYT_logo_rss_250x40.png',
+    'Fox News':     'https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/Fox_News_Channel_logo.svg/1200px-Fox_News_Channel_logo.svg.png',
+    'TechCrunch':   'https://techcrunch.com/wp-content/uploads/2015/02/cropped-cropped-favicon-gradient.png',
+    'The Verge':    'https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/The_Verge_logo.svg/1200px-The_Verge_logo.svg.png',
+    'Wired':        'https://upload.wikimedia.org/wikipedia/commons/thumb/9/95/Wired_logo.svg/1200px-Wired_logo.svg.png',
+    'CNBC':         'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/CNBC_logo.svg/1200px-CNBC_logo.svg.png',
+    'Bloomberg':    'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Bloomberg_Logo.svg/1200px-Bloomberg_Logo.svg.png',
+    'Google News': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Google_News_icon.svg/1200px-Google_News_icon.svg.png'
+  };
+
+  return map[source] || 'https://via.placeholder.com/1200x800?text=News+Update';
+}
+
+// ─────────────────────────────────────────────
+// UTILITY: METADATA SCRAPER (Fallback for missing RSS images)
+// ─────────────────────────────────────────────
+const imageScrapeCache = new Map();
+
+async function scrapeArticleImage(url) {
+  if (!url) return null;
+  if (imageScrapeCache.has(url)) return imageScrapeCache.get(url);
+
+  try {
+    // Perform a lightweight GET request for the first 10KB of HTML
+    const response = await axios.get(url, { 
+      timeout: 3000, 
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      responseType: 'text',
+      maxContentLength: 50000 // Limit to 50KB to save bandwidth
+    });
+
+    // Match og:image or twitter:image
+    const ogMatch = response.data.match(/<meta [^>]*property=["']og:image["'] [^>]*content=["']([^"']+)["']/i) ||
+                    response.data.match(/<meta [^>]*content=["']([^"']+)["'] [^>]*property=["']og:image["']/i);
+    
+    const src = ogMatch ? ogMatch[1] : null;
+
+    if (src && src.startsWith('http')) {
+      imageScrapeCache.set(url, src);
+      return src;
+    }
+  } catch (err) {
+    // Silent fail for scraper to avoid blocking the main feed
+  }
+  return null;
+}
+
+function extractImage(item) {
+  const candidates = [];
+  const push = (obj) => {
+    if (!obj || !obj.url) return;
+    const url = obj.url;
+    if (url.includes('pixel') || url.includes('tracking') || url.includes('/1x1') || !url.startsWith('http')) return;
+    candidates.push(obj);
+  };
+
+  // 1. Check media:content
+  const media = [].concat(item.media || []);
+  media.forEach(m => push(m.$ || m));
+
+  // 2. Check mediaGroup
+  const group = [].concat(item.mediaGroup || []);
+  group.forEach(g => {
+    if (g['media:content']) {
+      const contents = [].concat(g['media:content']);
+      contents.forEach(c => push(c.$ || c));
+    }
+  });
+
+  // 3. Check enclosure
+  const enclosures = [].concat(item.enclosure || []);
+  enclosures.forEach(e => push(e.$ || e));
+
+  // 4. Check mediaThumbnail
+  const thumbs = [].concat(item.mediaThumbnail || []);
+  thumbs.forEach(t => push(t.$ || t));
+
+  if (candidates.length > 0) {
+    const sorted = candidates.sort((a, b) => {
+      const resA = (parseInt(a.width) || 0) * (parseInt(a.height) || 0);
+      const resB = (parseInt(b.width) || 0) * (parseInt(b.height) || 0);
+      if (resB !== resA) return resB - resA;
+      const score = (url) => {
+        let s = 0;
+        if (url.includes('large')) s += 10;
+        if (url.includes('orig')) s += 10;
+        return s;
+      };
+      return score(b.url) - score(a.url);
+    });
+    return sorted[0].url;
+  }
+
+  // 5. Regex Scan (Raw HTML fields)
+  const body = item['content:encoded'] || item.content || item.description || '';
+  const imgRegex = /<img[^>]+src=["']([^"']+)["']/gi;
+  let match;
+  while ((match = imgRegex.exec(body)) !== null) {
+    const src = match[1];
+    if (src.includes('pixel') || src.includes('tracking') || src.includes('share') || !src.startsWith('http')) continue;
+    return src; // Returns the first non-tracker image from body
+  }
+
+  return null;
+}
+
+function stripHTML(html) {
+  if (!html) return '';
+  return html
+    .replace(/<[^>]*>?/gm, '') // Remove tags
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim();
+}
+
+// ─────────────────────────────────────────────
 // UTILITY: MD5 Hash
 // ─────────────────────────────────────────────
 function hash(data) {
@@ -172,13 +348,15 @@ function loadDB() {
 
 function saveDB(articles) {
   try {
-    // Maintain max DB size and auto-purge (7 days)
+    // 6. Remove Old Articles (> 48 hours)
     const now = Date.now();
-    const cleanArticles = articles
-      .filter(a => (now - new Date(a.publishedAt).getTime()) < 7 * 24 * 3600 * 1000)
-      .slice(0, 2000); // Max 2000 items in DB pool
+    const freshArticles = articles.filter(a => (now - new Date(a.publishedAt).getTime()) < 48 * 3600 * 1000);
     
-    fs.writeFileSync(DB_PATH, JSON.stringify(cleanArticles, null, 2));
+    // 9. Trim (Top 500)
+    const finalPool = freshArticles.slice(0, 500);
+    
+    fs.writeFileSync(DB_PATH, JSON.stringify(finalPool, null, 2));
+    console.log(`[DB] Saved ${finalPool.length} articles to high-speed pool.`);
   } catch (err) {
     console.error('[DB] Save Error:', err.message);
   }
@@ -227,243 +405,175 @@ setInterval(evictExpiredCaches, 60 * 1000); // Cleanup every minute
 // ─────────────────────────────────────────────
 // GNEWS FETCHER (with source-level cache)
 // ─────────────────────────────────────────────
-async function fetchGNews(endpoint, params) {
-  const gUrl      = endpoint === 'search'
-    ? 'https://gnews.io/api/v4/search'
-    : 'https://gnews.io/api/v4/top-headlines';
-  const sourceKey = `${endpoint}:${JSON.stringify(params)}`;
+// ─────────────────────────────────────────────
+// 3. NORMALIZE RSS ITEM
+// ─────────────────────────────────────────────
+function normalizeRSSItem(item, source) {
+  const publishedAt = item.pubDate || item.isoDate || new Date().toISOString();
+  const rawTitle    = (item.title || 'Untitled').trim();
+  
+  // 1. English-Only Guard
+  if (!isEnglish(rawTitle)) return null;
 
-  if (sourceCache.has(sourceKey)) {
-    const cached = sourceCache.get(sourceKey);
-    if (Date.now() - cached.timestamp < CONFIG.SOURCE_CACHE_TTL) {
-      return cached.data;
-    }
+  // 4. URL Sanitization
+  const link = cleanArticleURL(item.link || item.guid || '');
+  if (!link) return null;
+
+  // 5. Global Fingerprint (for ID stability)
+  const fp = hash(rawTitle.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+  
+  // 3. Precise Image Extraction (Refined Logic)
+  let image = extractImage(item);
+
+  // 6. FORCE IMAGE FALLBACK (Logo mapping)
+  if (!image) {
+     image = getFallbackImage(source.name);
   }
 
+  // 7. CLEAN DESCRIPTION (HTML Stripping)
+  const cleanDesc = stripHTML(item.contentSnippet || item.description || '');
+
+  return {
+    title: rawTitle,
+    description: cleanDesc.substring(0, 480),
+    url: link,
+    source: source.name,
+    category: source.category,
+    publishedAt,
+    image,
+    _fp: fp,
+    _stableId: fp,
+    _weight: source.weight
+  };
+}
+
+// ─────────────────────────────────────────────
+// 2. PARALLEL RSS FETCH
+// ─────────────────────────────────────────────
+async function fetchSource(source) {
   try {
-    const resp = await axios.get(gUrl, {
-      params: { ...params, token: process.env.GNEWS_API_KEY },
-      timeout: 30000,
-    });
-    const data = {
-      articles:      resp.data.articles      || [],
-      totalArticles: resp.data.totalArticles || 0,
-    };
-    sourceCache.set(sourceKey, { data, timestamp: Date.now() });
-    return data;
+    const feed = await parser.parseURL(source.url);
+    return feed.items.map(item => normalizeRSSItem(item, source));
   } catch (err) {
-    console.error(`[GNews ERROR] ${endpoint}:`, err.message);
-    return { articles: [], totalArticles: 0 };
+    console.error(`[RSS ERROR] ${source.name}:`, err.message);
+    return [];
   }
 }
 
 // ─────────────────────────────────────────────
-// PARALLEL RANGE FETCH (0-24h,24-48h,48-72h)
+// 7. SCORING ENGINE (Recency + Weight + Keyword)
 // ─────────────────────────────────────────────
-async function fetchParallelRanges(strategy, fetchLimit) {
-  const now   = new Date();
-  const ranges = CONFIG.RANGES_HOURS.map((hours, i) => {
-    const prevHours = CONFIG.RANGES_HOURS[i - 1] || 0;
-    const fromDate  = new Date(now - hours * 3600 * 1000).toISOString();
-    const toDate    = prevHours === 0 ? now.toISOString()
-      : new Date(now - prevHours * 3600 * 1000).toISOString();
-    return { from: fromDate, to: toDate, label: `${prevHours}–${hours}h` };
-  });
+// ─────────────────────────────────────────────
+// 7. SCORING ENGINE (Recency + Weight + Keyword)
+// ─────────────────────────────────────────────
+function calculateScore(article) {
+  const publishedMs  = new Date(article.publishedAt).getTime();
+  const ageHours     = (Date.now() - publishedMs) / 3600000;
+  
+  // Exponential decay (50% weight) - returns high-precision float
+  const recencyScore = Math.max(CONFIG.RECENCY_FLOOR, Math.exp(-ageHours / CONFIG.RECENCY_HALF_LIFE));
+  
+  // Weight (30% weight)
+  const weightScore = article._weight || 1.0;
+  
+  // Keyword Boost (20% weight)
+  const boostKeywords = BOOST_KEYWORDS[article.category] || [];
+  const titleLower    = article.title.toLowerCase();
+  const hasBoost      = boostKeywords.some(k => titleLower.includes(k));
+  const boostScore    = hasBoost ? 1.0 : 0.0;
 
-  const fetches = [];
-  for (const range of ranges) {
-    const params = { max: 10, from: range.from, to: range.to, lang: 'en' };
-    // GNews FREE tier doesn't allow from/to on /top-headlines
-    if (strategy.headlines && range.label === '0–24h') {
-      const { from, to, ...headlineParams } = params;
-      fetches.push(
-        fetchGNews('headlines', { ...strategy.headlines, ...headlineParams })
-          .then(r => ({ ...r, rangeLabel: range.label }))
-      );
-    }
-    if (strategy.search) {
-      fetches.push(
-        fetchGNews('search', { ...strategy.search, ...params })
-          .then(r => ({ ...r, rangeLabel: range.label }))
-      );
-    }
-    if (strategy.headlines && range.label !== '0–24h') {
-       const { from, to, ...headlineParams } = params;
-       fetches.push(
-        fetchGNews('headlines', { ...strategy.headlines, ...headlineParams })
-          .then(r => ({ ...r, rangeLabel: range.label }))
-      );
-    }
-  }
-
-  const results    = await Promise.allSettled(fetches);
-  const seenFp     = new Set();
-  const merged     = [];
-  let   totalCount = 0;
-
-  for (const result of results) {
-    if (result.status !== 'fulfilled') continue;
-    const { articles, totalArticles } = result.value;
-    totalCount = Math.max(totalCount, totalArticles || 0);
-
-    for (const article of articles) {
-      if (merged.length >= fetchLimit) break;
-      const descSnippet = (article.description || '').substring(0, 80).toLowerCase();
-      const sourceName  = (article.source?.name || '').toLowerCase();
-      const fp          = hash(article.title.toLowerCase() + sourceName + descSnippet);
-      if (!seenFp.has(fp)) {
-        seenFp.add(fp);
-        merged.push({ ...article, _fp: fp, _stableId: hash(article.url || article.title + article.publishedAt) });
-      }
-    }
-    if (merged.length >= fetchLimit) break;
-  }
-
-  return { articles: merged, totalArticles: totalCount };
+  // Final Composite Score (0.0 to 1.0)
+  return parseFloat(((0.5 * recencyScore) + (0.3 * (weightScore/2)) + (0.2 * boostScore)).toFixed(4));
 }
 
 // ─────────────────────────────────────────────
 // SCORING ENGINE
 // ─────────────────────────────────────────────
-function scoreArticle(article, boostKeywords, sourceFreq) {
-  // 1. Recency — exponential decay with floor
-  const publishedMs  = new Date(article.publishedAt).getTime();
-  const ageHours     = (Date.now() - publishedMs) / 3600000;
-  const recencyScore = Math.max(CONFIG.RECENCY_FLOOR, Math.exp(-ageHours / CONFIG.RECENCY_HALF_LIFE));
+// ─────────────────────────────────────────────
+// 11. CLUSTER & DEDUPLICATE (Game Changer)
+// ─────────────────────────────────────────────
+function clusterAndDeduplicate(articles) {
+  const clusters = {};
 
-  // 2. Boost — capped at 1.0
-  const titleLower = (article.title || '').toLowerCase();
-  const boostScore = boostKeywords.some(k => titleLower.includes(k)) ? 1.0 : 0.0;
+  articles.forEach(a => {
+    // Basic version (fast): key by first 50 chars of normalized title
+    const key = a.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 50);
 
-  // 3. Diversity — 1 / sqrt(frequency) to penalize source dominance
-  const freq         = sourceFreq.get(article.source?.name || 'unknown') || 1;
-  const diversScore  = 1 / Math.sqrt(freq);
+    if (!clusters[key]) clusters[key] = [];
+    clusters[key].push(a);
+  });
 
-  return (0.5 * recencyScore) + (0.3 * boostScore) + (0.2 * diversScore);
+  // Flat version: pick highest scored article from each cluster (Source Priority)
+  return Object.values(clusters).map(cluster => {
+    return cluster.sort((a, b) => b._score - a._score)[0];
+  });
 }
 
 // ─────────────────────────────────────────────
-// TIERED SHUFFLE (Applied ONCE at pool build)
+// 10. SYNC UNIFIED RSS (11-Step Pipeline)
 // ─────────────────────────────────────────────
-function tieredShuffle(articles) {
-  const arr  = [...articles];
-  const mid  = Math.ceil(arr.length / 2);
-  const top  = arr.slice(0, mid);
-  const bot  = arr.slice(mid);
+async function syncUnifiedRSS() {
+  console.log('[CRON] Starting 11-step RSS engine sync...');
+  
+  try {
+    // 2. Parallel RSS Fetch
+    const results = await Promise.allSettled(RSS_SOURCES.map(s => fetchSource(s)));
+    
+    // 3. Normalize & 4. Filter Trusted
+    const rawArticles = results
+      .filter(r => r.status === 'fulfilled')
+      .flatMap(r => r.value)
+      .filter(a => a !== null);
 
-  // Top 50%: light probabilistic swap (swap if random < 0.15)
-  for (let i = top.length - 1; i > 0; i--) {
-    if (Math.random() < 0.15) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [top[i], top[j]] = [top[j], top[i]];
-    }
+    // 7. Score
+    const scored = rawArticles.map(a => ({
+      ...a,
+      _score: calculateScore(a)
+    }));
+
+    // 11. Cluster & Deduplicate (Pick best source per story)
+    const unique = clusterAndDeduplicate(scored);
+
+    // 8. Sort Global (By Rating)
+    unique.sort((a, b) => b._score - a._score);
+
+    // 9. Trim & 10. Save db.json
+    saveDB(unique);
+    
+    console.log('[CRON] RSS pipeline complete.');
+  } catch (err) {
+    console.error('[CRON ERROR] RSS sync failed:', err.message);
   }
-
-  // Bottom 50%: full Fisher-Yates shuffle
-  for (let i = bot.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [bot[i], bot[j]] = [bot[j], bot[i]];
-  }
-
-  return [...top, ...bot];
 }
 
 // ─────────────────────────────────────────────
-// POOL BUILDER (with Promise-based locking)
+// POOL BUILDER (Refactored for RSS)
 // ─────────────────────────────────────────────
-async function buildOrGetPool(type, forceRefresh = false) {
-  const poolKey       = getPoolKey(type);
-  const strategy      = CATEGORY_STRATEGIES[type] || CATEGORY_STRATEGIES.us;
-  const boostKeywords = BOOST_KEYWORDS[type] || [];
-
-  // Serve existing pool unless forced refresh
-  if (!forceRefresh && sessionPools.has(poolKey)) {
+async function buildOrGetPool(type) {
+  const poolKey = getPoolKey(type);
+  
+  // 1. Try Session Cache
+  if (sessionPools.has(poolKey)) {
     return sessionPools.get(poolKey).articles;
   }
 
-  // If already building — wait for the lock (Promise-based, 5s timeout)
-  if (poolLocks.has(poolKey)) {
-    try {
-      await Promise.race([
-        poolLocks.get(poolKey),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('LOCK_TIMEOUT')), CONFIG.POOL_LOCK_TIMEOUT)),
-      ]);
-    } catch {
-      // Timeout — serve stale pool or fallback
-      console.warn(`[POOL] Lock timeout for ${poolKey}, serving fallback`);
-    }
-    return (sessionPools.get(poolKey) || lastGoodPool.get(type) || { articles: [] }).articles;
+  // 2. Read from local Mega-Pool DB
+  const db = loadDB();
+  const pool = db
+    .filter(a => a.category === type || type === 'us') // default to us
+    .slice(0, 100);
+
+  if (pool.length > 0) {
+    sessionPools.set(poolKey, { articles: pool, timestamp: Date.now() });
+    
+    // Trigger AI enrichment for top articles
+    pool.slice(0, 10).forEach((a, i) => enqueueAI(a, 10 - i));
+  } else {
+    console.warn(`[POOL] DB is empty for ${type}. Triggering sync...`);
+    syncUnifiedRSS();
   }
 
-  // Acquire lock
-  let resolveLock;
-  const lockPromise = new Promise(res => { resolveLock = res; });
-  poolLocks.set(poolKey, lockPromise);
-  console.log(`[POOL] Building pool: ${poolKey}`);
-
-  try {
-    const fetchLimit = Math.max(CONFIG.POOL_MAX_SIZE, 40);
-    const { articles: raw, totalArticles } = await fetchParallelRanges(strategy, fetchLimit);
-
-    if (raw.length === 0) {
-      throw new Error('EMPTY_FETCH');
-    }
-
-    // Compute source frequency for diversity scoring
-    const sourceFreq = new Map();
-    raw.forEach(a => {
-      const s = a.source?.name || 'unknown';
-      sourceFreq.set(s, (sourceFreq.get(s) || 0) + 1);
-    });
-
-    // Score & sort
-    const scored = raw
-      .map(a => ({ ...a, _score: scoreArticle(a, boostKeywords, sourceFreq) }))
-      .sort((a, b) => b._score - a._score)
-      .slice(0, CONFIG.POOL_MAX_SIZE);
-
-    // ONE-TIME tiered shuffle
-    const pool = tieredShuffle(scored);
-
-    // PERSIST TO DISK
-    const db = loadDB();
-    const dbMap = new Map(db.map(v => [v._stableId, v]));
-    
-    pool.forEach(a => {
-      // Preserve AI summary if it exists in DB
-      if (dbMap.has(a._stableId)) {
-        const existing = dbMap.get(a._stableId);
-        if (existing.aiSummary) a.aiSummary = existing.aiSummary;
-      }
-      dbMap.set(a._stableId, a);
-    });
-    
-    saveDB(Array.from(dbMap.values()).sort((a,b) => new Date(b.publishedAt) - new Date(a.publishedAt)));
-
-    const entry = { articles: pool, totalArticles, timestamp: Date.now() };
-    sessionPools.set(poolKey, entry);
-    lastGoodPool.set(type, entry); // Save as fallback
-
-    console.log(`[POOL] Committed ${pool.length} articles for ${poolKey}`);
-
-    // Enqueue top articles for AI enrichment (background, non-blocking)
-    pool.slice(0, 20).forEach((a, i) => enqueueAI(a, 20 - i));
-
-    return pool;
-
-  } catch (err) {
-    console.error(`[POOL] Build failed for ${poolKey}:`, err.message);
-    // Return last good pool on failure
-    const fallback = lastGoodPool.get(type);
-    if (fallback) {
-      console.warn(`[POOL] Serving cached fallback for ${type}`);
-      return fallback.articles;
-    }
-    return [];
-  } finally {
-    poolLocks.delete(poolKey);
-    resolveLock();
-  }
+  return pool;
 }
 
 // ─────────────────────────────────────────────
@@ -477,28 +587,13 @@ function buildFallbackDescription(article) {
 }
 
 // ─────────────────────────────────────────────
-// CRON FETCH LOGIC (Mega-Pool Sync)
+// CRON SYNC WRAPPER
 // ─────────────────────────────────────────────
 async function runCronFetch() {
-  console.log('[CRON] Starting 15-min MEGA-SYNC (Target: 150 articles per category)...');
-  const types = Object.keys(CATEGORY_STRATEGIES);
-  
-  for (const type of types) {
-    try {
-      console.log(`[CRON] Harvesting mega-pool for: ${type}`);
-      // Run multiple pool builds to saturate the 100-150 article goal
-      for (let i = 0; i < 3; i++) {
-        await buildOrGetPool(type, true); // Force fresh fetch
-        await new Promise(r => setTimeout(r, 4000)); // Stagger to avoid 429
-      }
-    } catch (err) {
-      console.error(`[CRON] Error for ${type}:`, err.message);
-    }
-  }
-  console.log('[CRON] Mega-Sync complete. Local pool is primed.');
+  await syncUnifiedRSS();
 }
 
-// Run initial sync after 3 second delay (let server bind first)
+// Run initial sync after 3 second delay
 setTimeout(runCronFetch, 3000);
 
 // ─────────────────────────────────────────────
@@ -519,37 +614,21 @@ router.get('/', async (req, res) => {
     let forceRefresh = refresh && !onCooldown;
     if (forceRefresh) cooldownMap.set(type, now);
 
-    // ── Get pool from Local DB (Zero API Latency) ────────────
+    // ── Get pool (Local-First) ──────────────────────────────
     let pool = [];
     
-    if (forceRefresh) {
-      console.log(`[REFRESH] Manual override: Syncing NEW news for ${type}...`);
-      // Run sync in background so the user gets instant local results
-      runCronFetch();
+    if (refresh) {
+      console.log(`[REFRESH] Background RSS sync triggered for ${type}`);
+      runCronFetch(); 
     }
     
-    // 1. Try Session Cache first
+    // 1. Try Session Cache
     const poolKey = getPoolKey(type);
-    if (!forceRefresh && sessionPools.has(poolKey)) {
+    if (!refresh && sessionPools.has(poolKey)) {
       pool = sessionPools.get(poolKey).articles;
     } else {
-      // 2. Read from local Mega-Pool DB
-      const db = loadDB();
-      const strat = CATEGORY_STRATEGIES[type] || {};
-      
-      pool = db.filter(a => {
-         if (strat.headlines?.category && a.category === strat.headlines.category) return true;
-         if (a.category === type) return true;
-         return a._type === type || type === 'us';
-      });
-      
-      // Auto-populate session pool from DB
-      if (pool.length > 0) {
-        sessionPools.set(poolKey, { articles: pool, totalArticles: pool.length, timestamp: Date.now() });
-      } else {
-        // Absolute last resort: build if dry
-        pool = await buildOrGetPool(type);
-      }
+      // 2. Serve from Local ranked DB
+      pool = await buildOrGetPool(type);
     }
 
     if (!pool || pool.length === 0) {
@@ -568,10 +647,17 @@ router.get('/', async (req, res) => {
     pageSlice.forEach((a, i) => enqueueAI(a, 50 - i));
 
     // ── Transform response ───────────────────────────────────
-    const articles = pageSlice.map((item, idx) => {
+    const articles = await Promise.all(pageSlice.map(async (item, idx) => {
       const cachedSummary = summaryCache.get(item.url);
       const aiSummary     = cachedSummary ? cachedSummary.text : null;
       const description   = aiSummary || buildFallbackDescription(item);
+
+      // Robust Image Fetch (Local first, then Scraper)
+      let image = item.image;
+      if (!image || image.includes('placeholder')) {
+        const scraped = await scrapeArticleImage(item.url);
+        if (scraped) image = scraped;
+      }
 
       return {
         id:          startIdx + idx + 1,
@@ -580,13 +666,13 @@ router.get('/', async (req, res) => {
         description,
         aiSummary,
         hasAiSummary: !!aiSummary,
-        image:       item.image?.startsWith('http') ? item.image : null,
+        image:       image && image.startsWith('http') ? image : null,
         url:         item.url,
-        source:      item.source?.name || 'Unknown',
+        source:      item.source || 'Unknown',
         publishedAt: item.publishedAt,
-        score:       parseFloat((item._score || 0).toFixed(3)),
+        score:       parseFloat((item._score || 0).toFixed(4)),
       };
-    });
+    }));
 
     res.json({
       success: true,
@@ -612,5 +698,5 @@ router.get('/', async (req, res) => {
 
 module.exports = {
   router,
-  runCronFetch
+  runCronFetch: syncUnifiedRSS
 };

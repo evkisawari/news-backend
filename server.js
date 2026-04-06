@@ -11,9 +11,9 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// CRON Job: Every 15 minutes
-cron.schedule('*/15 * * * *', () => {
-  console.log('[CRON] Starting 15-min news mega-sync...');
+// CRON Job: Every 10 minutes (RSS harvesting)
+cron.schedule('*/10 * * * *', () => {
+  console.log('[CRON] Starting 10-minute RSS sync...');
   runCronFetch();
 });
 
