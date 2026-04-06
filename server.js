@@ -1,7 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const newsRoutes = require('./routes/news.js');
+const cron = require('node-cron');
+const { router: newsRoutes, runCronFetch } = require('./routes/news.js');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -9,6 +10,12 @@ const PORT = process.env.PORT || 5000;
 // Enable CORS
 app.use(cors());
 app.use(express.json());
+
+// CRON Job: Every 15 minutes
+cron.schedule('*/15 * * * *', () => {
+  console.log('[CRON] Starting 15-min news mega-sync...');
+  runCronFetch();
+});
 
 // Root Route
 app.get('/', (req, res) => {

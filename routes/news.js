@@ -3,6 +3,10 @@ const router = express.Router();
 const axios = require('axios');
 const OpenAI = require('openai');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+const DB_PATH = path.join(__dirname, '../db.json');
 
 // ─────────────────────────────────────────────
 // CONFIGURATION
@@ -102,6 +106,14 @@ async function processAIJob({ article, url }) {
     const summary = await fetchAISummary(article);
     if (summary) {
       summaryCache.set(url, { text: summary, timestamp: Date.now() });
+      
+      // Persist to JSON DB
+      const db = loadDB();
+      const idx = db.findIndex(a => a._stableId === article._stableId);
+      if (idx !== -1) {
+        db[idx].aiSummary = summary;
+        saveDB(db);
+      }
     }
   } finally {
     aiInFlight.delete(url);
@@ -142,6 +154,34 @@ ${fullText.substring(0, 1500)}`,
 // ─────────────────────────────────────────────
 function hash(data) {
   return crypto.createHash('md5').update(String(data)).digest('hex');
+}
+
+// ─────────────────────────────────────────────
+// UTILITY: JSON DB HELPERS
+// ─────────────────────────────────────────────
+function loadDB() {
+  try {
+    if (!fs.existsSync(DB_PATH)) return [];
+    const data = fs.readFileSync(DB_PATH, 'utf8');
+    return JSON.parse(data) || [];
+  } catch (err) {
+    console.error('[DB] Load Error:', err.message);
+    return [];
+  }
+}
+
+function saveDB(articles) {
+  try {
+    // Maintain max DB size and auto-purge (7 days)
+    const now = Date.now();
+    const cleanArticles = articles
+      .filter(a => (now - new Date(a.publishedAt).getTime()) < 7 * 24 * 3600 * 1000)
+      .slice(0, 2000); // Max 2000 items in DB pool
+    
+    fs.writeFileSync(DB_PATH, JSON.stringify(cleanArticles, null, 2));
+  } catch (err) {
+    console.error('[DB] Save Error:', err.message);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -233,10 +273,11 @@ async function fetchParallelRanges(strategy, fetchLimit) {
   const fetches = [];
   for (const range of ranges) {
     const params = { max: 10, from: range.from, to: range.to, lang: 'en' };
-    // Only fetch headlines for 0-24h range; use search for 24-48h and 48-72h to reduce API load
+    // GNews FREE tier doesn't allow from/to on /top-headlines
     if (strategy.headlines && range.label === '0–24h') {
+      const { from, to, ...headlineParams } = params;
       fetches.push(
-        fetchGNews('headlines', { ...strategy.headlines, ...params })
+        fetchGNews('headlines', { ...strategy.headlines, ...headlineParams })
           .then(r => ({ ...r, rangeLabel: range.label }))
       );
     }
@@ -247,8 +288,9 @@ async function fetchParallelRanges(strategy, fetchLimit) {
       );
     }
     if (strategy.headlines && range.label !== '0–24h') {
-      fetches.push(
-        fetchGNews('headlines', { ...strategy.headlines, ...params })
+       const { from, to, ...headlineParams } = params;
+       fetches.push(
+        fetchGNews('headlines', { ...strategy.headlines, ...headlineParams })
           .then(r => ({ ...r, rangeLabel: range.label }))
       );
     }
@@ -383,6 +425,21 @@ async function buildOrGetPool(type, forceRefresh = false) {
     // ONE-TIME tiered shuffle
     const pool = tieredShuffle(scored);
 
+    // PERSIST TO DISK
+    const db = loadDB();
+    const dbMap = new Map(db.map(v => [v._stableId, v]));
+    
+    pool.forEach(a => {
+      // Preserve AI summary if it exists in DB
+      if (dbMap.has(a._stableId)) {
+        const existing = dbMap.get(a._stableId);
+        if (existing.aiSummary) a.aiSummary = existing.aiSummary;
+      }
+      dbMap.set(a._stableId, a);
+    });
+    
+    saveDB(Array.from(dbMap.values()).sort((a,b) => new Date(b.publishedAt) - new Date(a.publishedAt)));
+
     const entry = { articles: pool, totalArticles, timestamp: Date.now() };
     sessionPools.set(poolKey, entry);
     lastGoodPool.set(type, entry); // Save as fallback
@@ -420,25 +477,29 @@ function buildFallbackDescription(article) {
 }
 
 // ─────────────────────────────────────────────
-// PRE-WARM KEY POOLS on startup
+// CRON FETCH LOGIC (Mega-Pool Sync)
 // ─────────────────────────────────────────────
-async function prewarmPools() {
-  const priorityTypes = ['us', 'world', 'technology'];
-  console.log('[PREWARM] Warming pools for:', priorityTypes.join(', '));
-  for (const type of priorityTypes) {
+async function runCronFetch() {
+  console.log('[CRON] Starting 15-min MEGA-SYNC (Target: 150 articles per category)...');
+  const types = Object.keys(CATEGORY_STRATEGIES);
+  
+  for (const type of types) {
     try {
-      await buildOrGetPool(type);
-      // Stagger requests to avoid GNews 429 rate limits
-      await new Promise(r => setTimeout(r, 3000));
+      console.log(`[CRON] Harvesting mega-pool for: ${type}`);
+      // Run multiple pool builds to saturate the 100-150 article goal
+      for (let i = 0; i < 3; i++) {
+        await buildOrGetPool(type, true); // Force fresh fetch
+        await new Promise(r => setTimeout(r, 4000)); // Stagger to avoid 429
+      }
     } catch (err) {
-      console.error(`[PREWARM] Failed for ${type}:`, err.message);
+      console.error(`[CRON] Error for ${type}:`, err.message);
     }
   }
-  console.log('[PREWARM] Done.');
+  console.log('[CRON] Mega-Sync complete. Local pool is primed.');
 }
 
-// Run prewarm after 3 second delay (let server bind first)
-setTimeout(prewarmPools, 3000);
+// Run initial sync after 3 second delay (let server bind first)
+setTimeout(runCronFetch, 3000);
 
 // ─────────────────────────────────────────────
 // GET /api/news
@@ -458,8 +519,38 @@ router.get('/', async (req, res) => {
     let forceRefresh = refresh && !onCooldown;
     if (forceRefresh) cooldownMap.set(type, now);
 
-    // ── Get or build pool ───────────────────────────────────
-    let pool = await buildOrGetPool(type, forceRefresh);
+    // ── Get pool from Local DB (Zero API Latency) ────────────
+    let pool = [];
+    
+    if (forceRefresh) {
+      console.log(`[REFRESH] Manual override: Syncing NEW news for ${type}...`);
+      // Run sync in background so the user gets instant local results
+      runCronFetch();
+    }
+    
+    // 1. Try Session Cache first
+    const poolKey = getPoolKey(type);
+    if (!forceRefresh && sessionPools.has(poolKey)) {
+      pool = sessionPools.get(poolKey).articles;
+    } else {
+      // 2. Read from local Mega-Pool DB
+      const db = loadDB();
+      const strat = CATEGORY_STRATEGIES[type] || {};
+      
+      pool = db.filter(a => {
+         if (strat.headlines?.category && a.category === strat.headlines.category) return true;
+         if (a.category === type) return true;
+         return a._type === type || type === 'us';
+      });
+      
+      // Auto-populate session pool from DB
+      if (pool.length > 0) {
+        sessionPools.set(poolKey, { articles: pool, totalArticles: pool.length, timestamp: Date.now() });
+      } else {
+        // Absolute last resort: build if dry
+        pool = await buildOrGetPool(type);
+      }
+    }
 
     if (!pool || pool.length === 0) {
       // Absolute final fallback — return empty success rather than 500
@@ -519,4 +610,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = {
+  router,
+  runCronFetch
+};
