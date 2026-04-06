@@ -259,14 +259,15 @@ router.get('/', async (req, res) => {
     // 4. Final Transform and AI Summarization (Parallel)
     console.log(`PRE-TRANSFORM: Processing ${processedList.length} unique articles (Type: ${type})`);
     
-    const processed = await Promise.all(processedList.slice(0, limit).map(async (item) => {
+    const processed = await Promise.all(processedList.slice(0, limit).map(async (item, idx) => {
       const aiSummary = await requestAISummary(item);
       const description = aiSummary || synthesizeDescription(item, type);
       
       console.log(`DEBUG: AI Summary ${aiSummary ? 'SUCCESS' : 'FALLBACK'} for ${item.title.substring(0, 30)}...`);
       
       return {
-        id: item.stableId,
+        id: idx + 1 + (page - 1) * limit,
+        stableId: item.stableId,
         title: item.title,
         description: description,
         aiSummary: aiSummary || null,
