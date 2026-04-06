@@ -2,195 +2,214 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 
-/**
- * Intelligent Description Synthesizer
- * Ensures the description is between 50-65 words by combining API fields 
- * and adding contextual, non-topic-changing padding if necessary.
- */
-const synthesizeDescription = (item, category) => {
-  const title = item.title || "";
-  const desc = item.description || "";
-  const content = (item.content || "").replace(/\[\+\d+ chars\]/g, ""); // Remove [+1234 chars]
-
-  // Combine unique parts of description and content
-  let combined = desc;
-  if (content.length > desc.length && content.startsWith(desc.substring(0, 10))) {
-    combined = content;
-  } else if (!desc.includes(content) && !content.includes(desc)) {
-    combined = `${desc} ${content}`.trim();
-  }
-
-  let words = combined.split(/\s+/).filter(w => w.length > 0);
-
-  // If already matches the target, return it
-  if (words.length >= 50 && words.length <= 65) {
-    return words.slice(0, 65).join(" ");
-  }
-
-  // If too long, trim it
-  if (words.length > 65) {
-    return words.slice(0, 65).join(" ") + "...";
-  }
-
-  // If too short, add contextual padding without changing the topic/meaning
-  const sourceName = item.source?.name || "reputable sources";
-  const date = item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : "recently";
-  const topic = category || "this field";
-
-  const paddingSentences = [
-    `This report, originally documented by ${sourceName}, provides essential insights into ${topic}.`,
-    `As a developing story, viewers are encouraged to monitor ${sourceName} for further updates regarding this matter.`,
-    `This news piece, published on ${date}, remains a significant development in the current landscape of ${topic}.`,
-    `The full context and detailed analysis of this event are being followed closely by industry experts and ${sourceName}.`,
-    `Stay informed by checking the original source URL for the complete breakdown of these events.`
-  ];
-
-  let i = 0;
-  while (words.length < 50 && i < paddingSentences.length) {
-    const padWords = paddingSentences[i].split(" ");
-    words = [...words, ...padWords];
-    i++;
-  }
-
-  // Final trim to ensure we are within 50-65 words exactly
-  return words.slice(0, 65).join(" ");
-};
-
-// Simple In-Memory Cache
+// 1. Simple In-Memory Cache
 const cache = {};
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+// 2. Storage for Source-Level Cache (GNews API calls)
+const sourceCache = {};
+const SOURCE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+// 3. High-Quality Strategy Configuration
+const CATEGORY_STRATEGIES = {
+  us: { 
+    type: 'single', 
+    headlines: { country: 'us', category: 'general', lang: 'en' } 
+  },
+  world: { 
+    type: 'mix', 
+    headlines: { lang: 'en' }, 
+    search: { q: 'war OR conflict OR election OR government OR military OR sanctions OR diplomacy', sortBy: 'publishedAt' },
+    boostKeywords: ['war', 'crisis', 'election', 'conflict']
+  },
+  finance: { 
+    type: 'mix', 
+    headlines: { category: 'business', lang: 'en' }, 
+    search: { q: 'market OR stocks OR economy OR inflation OR earnings', sortBy: 'publishedAt' } 
+  },
+  technology: { 
+    type: 'dynamic', 
+    headlines: { category: 'technology', lang: 'en' }, 
+    search: { q: 'AI OR software OR startup OR cybersecurity OR "big tech"', sortBy: 'publishedAt' } 
+  },
+  lifestyle: { 
+    type: 'mix', 
+    headlines: { category: 'entertainment', lang: 'en' }, 
+    search: { q: 'travel OR food OR health OR fitness OR fashion', sortBy: 'publishedAt' } 
+  }
+};
+
+/**
+ * Enhanced GNews Fetcher with Internal Source-Level Cache
+ */
+async function fetchGNews(endpoint, params) {
+  const gEndpoint = endpoint === 'search' ? 'https://gnews.io/api/v4/search' : 'https://gnews.io/api/v4/top-headlines';
+  const sourceKey = `${endpoint}-${JSON.stringify(params)}`;
+  
+  if (sourceCache[sourceKey] && (Date.now() - sourceCache[sourceKey].timestamp < SOURCE_CACHE_TTL)) {
+    console.log(`SOURCE CACHE HIT: ${sourceKey}`);
+    return sourceCache[sourceKey].data;
+  }
+
+  try {
+    const response = await axios.get(gEndpoint, {
+      params: { ...params, token: process.env.GNEWS_API_KEY },
+      timeout: 30000
+    });
+    const data = {
+      articles: response.data.articles || [],
+      totalArticles: response.data.totalArticles || 0
+    };
+    sourceCache[sourceKey] = { data, timestamp: Date.now() };
+    return data;
+  } catch (error) {
+    console.error(`SOURCE FETCH ERROR (${endpoint}):`, error.message);
+    return { articles: [], totalArticles: 0 };
+  }
+}
+
+/**
+ * Soft Boost Logic: Increases priority score for articles with specific keywords in the title
+ */
+function applySoftBoost(articles, keywords) {
+  if (!keywords || keywords.length === 0) return articles;
+  
+  return [...articles].sort((a, b) => {
+    const aTitle = (a.title || "").toLowerCase();
+    const bTitle = (b.title || "").toLowerCase();
+    
+    let aBoost = keywords.some(k => aTitle.includes(k.toLowerCase())) ? 1 : 0;
+    let bBoost = keywords.some(k => bTitle.includes(k.toLowerCase())) ? 1 : 0;
+    
+    if (aBoost !== bBoost) return bBoost - aBoost;
+    return 0; // Maintain original diversity if both boosted or none boosted
+  });
+}
+
+/**
+ * Description Synthesizer (50-65 words)
+ */
+function synthesizeDescription(article, category) {
+  const content = article.description || article.content || "Breaking news update.";
+  const parts = content.split(" ").filter(w => w.length > 0);
+  let baseText = parts.length > 35 ? parts.slice(0, 35).join(" ") + "..." : parts.join(" ");
+  
+  const ctx = category ? category.charAt(0).toUpperCase() + category.slice(1) : "General News";
+  const extra = ` In ${ctx} context, this update highlights critical developments that could significantly impact the current ${ctx.toLowerCase()} landscape. Analysts suggest these events are part of a broader shift in the sector.`;
+  
+  const final = `${baseText} ${extra}`;
+  const finalParts = final.split(" ").filter(w => w.length > 0);
+  return finalParts.slice(0, 65).join(" ");
+}
 
 // GET /api/news
 router.get('/', async (req, res) => {
   try {
     const { page = 1, limit = 10, category, country = 'us', refresh, from, to, type = 'us' } = req.query;
     
-    // 1. Generate unique cache key (including type)
-    const cacheKey = `${type}-${page}-${limit}-${category || 'all'}-${country}-${from || 'none'}-${to || 'none'}`;
-    const now = Date.now();
-
-    // 2. Check Cache (unless refresh is forced)
-    if (refresh !== 'true' && cache[cacheKey]) {
-      const { data, timestamp } = cache[cacheKey];
-      if (now - timestamp < CACHE_TTL) {
-        console.log(`CACHE HIT: ${cacheKey}`);
-        return res.json(data);
-      }
-      console.log(`CACHE EXPIRED: ${cacheKey}`);
-      delete cache[cacheKey];
+    // Type Cache Key (Result of Strategy)
+    const typeKey = `${type}-${page}-${limit}-${category || 'all'}-${country}-${from || 'none'}-${to || 'none'}`;
+    if (refresh !== 'true' && cache[typeKey] && (Date.now() - cache[typeKey].timestamp < CACHE_TTL)) {
+      console.log(`TYPE CACHE HIT: ${typeKey}`);
+      return res.json(cache[typeKey].data);
     }
 
-    const GNEWS_API_KEY = process.env.GNEWS_API_KEY;
-    const GNEWS_API_URL_HEADLINES = 'https://gnews.io/api/v4/top-headlines';
-    const GNEWS_API_URL_SEARCH = 'https://gnews.io/api/v4/search';
+    const strategy = CATEGORY_STRATEGIES[type] || CATEGORY_STRATEGIES.us;
+    console.log(`EXECUTING STRATEGY: ${type} (${strategy.type})`);
 
-    let rawArticles = [];
-    let totalArticlesCount = 0;
+    let rawList = [];
+    let totalCountEstimate = 0;
 
-    // 3. Fetch Data based on Type
-    if (type === 'world') {
-      console.log(`FETCHING WORLD FEED: Parallel Requests (Headlines + Global Keywords)`);
-      
-      const [headlinesRes, searchRes] = await Promise.all([
-        axios.get(GNEWS_API_URL_HEADLINES, {
-          params: { token: GNEWS_API_KEY, lang: 'en', max: limit, page: page, from, to },
-          timeout: 30000
-        }),
-        axios.get(GNEWS_API_URL_SEARCH, {
-          params: { 
-            token: GNEWS_API_KEY, 
-            q: 'war OR conflict OR election OR government OR military OR sanctions OR diplomacy',
-            lang: 'en', 
-            max: limit, 
-            page: page, 
-            sortBy: 'publishedAt',
-            from, to 
-          },
-          timeout: 30000
-        })
+    if (strategy.type === 'single') {
+      const result = await fetchGNews('headlines', { ...strategy.headlines, page, max: limit, from, to });
+      rawList = result.articles;
+      totalCountEstimate = result.totalArticles;
+
+    } else if (strategy.type === 'mix') {
+      const [hRes, sRes] = await Promise.all([
+        fetchGNews('headlines', { ...strategy.headlines, page, max: limit, from, to }),
+        fetchGNews('search', { ...strategy.search, page, max: limit, from, to })
       ]);
-
-      // Combine and Interleave (approx 50/50 balance)
-      const hList = headlinesRes.data.articles || [];
-      const sList = searchRes.data.articles || [];
       
+      const hList = hRes.articles;
+      const sList = sRes.articles;
       let i = 0, j = 0;
       while (i < hList.length || j < sList.length) {
-        if (i < hList.length) rawArticles.push(hList[i++]);
-        if (j < sList.length) rawArticles.push(sList[j++]);
+        if (i < hList.length) rawList.push(hList[i++]);
+        if (j < sList.length) rawList.push(sList[j++]);
       }
-      totalArticlesCount = (headlinesRes.data.totalArticles || hList.length) + (searchRes.data.totalArticles || sList.length);
+      totalCountEstimate = Math.max(hRes.totalArticles || 0, sRes.totalArticles || 0);
 
-    } else {
-      // type=us (Default)
-      console.log(`FETCHING US FEED: country=us`);
-      const response = await axios.get(GNEWS_API_URL_HEADLINES, {
-        params: {
-          token: GNEWS_API_KEY,
-          lang: 'en',
-          country: 'us',
-          category: category || 'general',
-          max: limit,
-          page: page,
-          from, to
-        },
-        timeout: 30000
-      });
-      rawArticles = response.data.articles || [];
-      totalArticlesCount = response.data.totalArticles || rawArticles.length;
+    } else if (strategy.type === 'dynamic') {
+      const hRes = await fetchGNews('headlines', { ...strategy.headlines, page, max: limit, from, to });
+      rawList = hRes.articles;
+      if (rawList.length < 5) {
+        console.log(`DYNAMIC FALLBACK: Low result count (${rawList.length}), adding search items`);
+        const sRes = await fetchGNews('search', { ...strategy.search, page, max: limit, from, to });
+        rawList = [...rawList, ...sRes.articles];
+      }
+      totalCountEstimate = hRes.totalArticles;
     }
 
-    // 4. Handle Empty Response
-    if (rawArticles.length === 0) {
-      return res.json({ success: true, page: Number(page), limit: Number(limit), total: 0, articles: [] });
-    }
+    // --- SHARED PROCESSING PIPELINE ---
 
-    // 5. FIX DATA QUALITY (Strict Deduplication: Title + URL)
+    // 1. Deduplication (Title + URL)
     const seenTitles = new Set();
     const seenUrls = new Set();
-    
-    const uniqueArticles = rawArticles.filter(article => {
-      const normalizedTitle = (article.title || "").toLowerCase().trim();
-      const normalizedUrl = (article.url || "").toLowerCase().trim();
-      
-      if (seenTitles.has(normalizedTitle) || seenUrls.has(normalizedUrl)) return false;
-      
-      seenTitles.add(normalizedTitle);
-      seenUrls.add(normalizedUrl);
+    let uniqueList = rawList.filter(article => {
+      const nTitle = (article.title || "").toLowerCase().trim();
+      const nUrl = (article.url || "").toLowerCase().trim();
+      if (seenTitles.has(nTitle) || seenUrls.has(nUrl)) return false;
+      seenTitles.add(nTitle);
+      seenUrls.add(nUrl);
       return true;
     });
 
-    // 6. Map and Interleave limit
-    const processedArticles = uniqueArticles.slice(0, limit).map((item, index) => ({
-      id: index + 1 + (page - 1) * limit,
+    // 2. Soft Boost (World only)
+    if (type === 'world' && strategy.boostKeywords) {
+      uniqueList = applySoftBoost(uniqueList, strategy.boostKeywords);
+    }
+
+    // 3. Fallback to General Headlines (If total < 5)
+    if (uniqueList.length < 5 && type !== 'us') {
+      console.log(`TOTAL FALLBACK: Category result < 5, fetching General headlines`);
+      const general = await fetchGNews('headlines', { lang: 'en', page: 1, max: 10 });
+      for (const entry of general.articles) {
+        if (uniqueList.length >= limit) break;
+        const nTitle = (entry.title || "").toLowerCase().trim();
+        if (!seenTitles.has(nTitle)) {
+           uniqueList.push(entry);
+           seenTitles.add(nTitle);
+        }
+      }
+    }
+
+    // 4. Final Transform and Limit
+    const processed = uniqueList.slice(0, limit).map((item, idx) => ({
+      id: idx + 1 + (page - 1) * limit,
       title: item.title,
-      description: synthesizeDescription(item, category || (type === 'world' ? 'Global Events' : 'US News')),
+      description: synthesizeDescription(item, type),
       image: item.image && item.image.startsWith('http') ? item.image : null,
       url: item.url,
       source: item.source?.name || "Unknown",
       publishedAt: item.publishedAt,
     }));
 
-    const finalResponse = {
+    const finalResult = {
       success: true,
       type,
       page: Number(page),
       limit: Number(limit),
-      total: totalArticlesCount,
-      articles: processedArticles,
+      total: totalCountEstimate,
+      articles: processed
     };
 
-    // 7. Store in Cache
-    cache[cacheKey] = { data: finalResponse, timestamp: now };
-
-    res.json(finalResponse);
+    cache[typeKey] = { data: finalResult, timestamp: Date.now() };
+    res.json(finalResult);
 
   } catch (error) {
-    console.error('GNews Fetch Error:', error.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch news",
-    });
+    console.error('Final News Strategy Error:', error.message);
+    res.status(500).json({ success: false, error: "Critical failure in news strategy" });
   }
 });
 
