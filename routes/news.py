@@ -7,6 +7,7 @@ import base64
 import json
 import random
 import time
+from datetime import datetime, timezone
 import asyncio
 from typing import Optional
 
@@ -68,6 +69,10 @@ async def get_news(
     # ── Load + filter ─────────────
     try:
         db = load_db()
+        # Drip Feed Filter: Hide articles that have a release time in the future
+        now_iso = datetime.utcnow().isoformat()
+        db = [a for a in db if (a.get('visibleAt') or '') <= now_iso]
+        
         if cat in ['home', 'all']:
             # Mix mode: Use everything
             pool = db
@@ -113,7 +118,10 @@ async def get_news(
 
     # ── Dynamic Time-Weighted Scoring ──────────
     # We rank the UNSEEN pool to find the best NEW stories.
-    unseen_pool = [{**a, '_score': calculate_score(a, profile, page_depth)} for a in unseen_pool]
+    # Start-Shuffle: Add small random noise on page 0 to vary the headline order
+    noise = (random.random() * 0.05) if (fresh or start_idx == 0) else 0.0
+    
+    unseen_pool = [{**a, '_score': calculate_score(a, profile, page_depth) + noise} for a in unseen_pool]
     unseen_pool.sort(key=lambda x: x.get('_score', 0), reverse=True)
 
     # ── Diversity Picker (Home Mix Fix) ────────

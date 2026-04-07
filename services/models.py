@@ -37,6 +37,7 @@ class NewsArticle(Base):
     is_exploration = Column(Boolean, default=False)
     source_type = Column(String)  # newsdata, gnews, rss
     weight = Column(Float, default=1.0)
+    visible_at = Column(DateTime, default=datetime.utcnow) # Release timer (Drip Feed)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -62,6 +63,7 @@ def init_db():
     try:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS seen_articles JSONB DEFAULT '[]'::jsonb;"))
+            conn.execute(text("ALTER TABLE news_articles ADD COLUMN IF NOT EXISTS visible_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;"))
     except Exception as e:
         print("[DB] Note: Could not alter user_profiles (might already exist or unsupported):", e)
         

@@ -1,7 +1,7 @@
 """
 services/database.py — PostgreSQL article storage & deduplication.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
@@ -60,7 +60,9 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                         ai_summary     = a.get('aiSummary'),
                         is_exploration = a.get('isExploration', False),
                         source_type    = a.get('_sourceType'),
-                        weight         = a.get('_weight', 1.0)
+                        weight         = a.get('_weight', 1.0),
+                        # Stagger Release: 3 articles every 10 minutes (Batching)
+                        visible_at     = datetime.utcnow() + timedelta(minutes=(count // 3) * 10)
                     )
                     db.add(new_art)
                     count += 1
@@ -109,6 +111,7 @@ def _to_dict(row: NewsArticle) -> Dict[str, Any]:
         'isExploration': row.is_exploration,
         '_sourceType':   row.source_type,
         '_weight':       row.weight,
+        'visibleAt':     row.visible_at.isoformat() if row.visible_at else '',
     }
 
 
