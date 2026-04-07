@@ -93,17 +93,14 @@ async def get_news(
 
     # ── Filter out seen articles (never repeat) ──
     unseen_pool = [a for a in pool if a.get('_stableId') not in seen_articles]
-    
-    if len(unseen_pool) < limit:
-        # Fallback: Loop back! Wipe memory if user ran completely out of unseen content.
-        unseen_pool = pool
-        seen_articles = []
-        if userId:
-            # We must use a thread to cleanly wipe safely in standard sync SQLAlchemy code
-            loop = asyncio.get_event_loop()
-            loop.run_in_executor(None, profile_store.mark_articles_seen, userId, [], True)
 
-    pool = unseen_pool
+    fallback_used = False
+    if len(unseen_pool) < limit:
+        # Fallback: serve from full pool (including already‑seen) so feed never empty.
+        unseen_pool = pool
+        fallback_used = True
+        print("[FEED] Fallback activated – serving already‑seen articles to avoid empty feed.")
+
 
     # ── Determine Progression Depth ───────────
     start_idx  = decode_cursor(cursor) if cursor else 0
