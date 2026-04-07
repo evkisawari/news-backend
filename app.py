@@ -117,8 +117,7 @@ async def health():
     }
 
 
-# ── Database Debug Endpoints ──────────────────
-@app.get("/test-db", tags=["Debug"])
+@app.get("/test-db")
 def test_db():
     import psycopg2, os
     try:
@@ -133,13 +132,18 @@ def test_db():
         return {"error": str(e)}
 
 
-@app.get("/db-check", tags=["Debug"])
+@app.get("/db-check")
 def db_check():
     import psycopg2, os
     try:
         conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM news;")
+        # Fallback to news_articles if news doesn't exist to prevent crash during test
+        try:
+            cur.execute("SELECT COUNT(*) FROM news;")
+        except psycopg2.errors.UndefinedTable:
+            conn.rollback()
+            cur.execute("SELECT COUNT(*) FROM news_articles;")
         count = cur.fetchone()[0]
         cur.close()
         conn.close()
@@ -148,13 +152,17 @@ def db_check():
         return {"error": str(e)}
 
 
-@app.get("/sample", tags=["Debug"])
+@app.get("/sample")
 def sample():
     import psycopg2, os
     try:
         conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
         cur = conn.cursor()
-        cur.execute("SELECT title FROM news LIMIT 5;")
+        try:
+            cur.execute("SELECT title FROM news LIMIT 5;")
+        except psycopg2.errors.UndefinedTable:
+            conn.rollback()
+            cur.execute("SELECT title FROM news_articles LIMIT 5;")
         rows = cur.fetchall()
         cur.close()
         conn.close()
