@@ -197,10 +197,10 @@ def _extract_rss_image(entry: Any) -> str:
     return ''
 
 
-def _parse_rss_source_sync(source: Dict) -> List[Dict]:
-    """Synchronous feedparser call — run in executor to avoid blocking."""
+def _parse_rss_source_sync(source: Dict, xml_text: str) -> List[Dict]:
+    """Synchronous feedparser call — parse string, no network."""
     try:
-        feed = feedparser.parse(source['url'], request_headers=_RSS_HEADERS)
+        feed = feedparser.parse(xml_text)
         articles = []
         for entry in feed.entries[:25]:
             title = (entry.get('title', '') or '').strip()
@@ -231,10 +231,26 @@ def _parse_rss_source_sync(source: Dict) -> List[Dict]:
         return []
 
 
-async def fetch_rss_for_category(category: str) -> List[Dict]:
+async def fetch_rss_for_category(category: str, client: httpx.AsyncClient) -> List[Dict]:
     loop = asyncio.get_event_loop()
     sources = [s for s in RSS_SOURCES if s['category'] == category]
-    tasks = [loop.run_in_executor(None, _parse_rss_source_sync, src) for src in sources]
+    
+    async def fetch_and_parse(src: Dict) -> List[Dict]:
+        try:
+            # Fetch with timeout to prevent indefinite hangs
+            resp = await client.get(src['url'], headers=_RSS_HEADERS, timeout=12.0)
+            resp.raise_for_status()
+            text = resp.text
+            # Parse in executor to avoid event loop blocking
+            return await loop.run_in_executor(None, _parse_rss_source_sync, src, text)
+        except httpx.TimeoutException:
+            print(f"[RSS TIMEOUT] {src['name']} skipping...")
+            return []
+        except Exception as e:
+            print(f"[RSS FETCH ERROR] {src['name']}: {e}")
+            return []
+
+    tasks = [fetch_and_parse(src) for src in sources]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     articles = []
     for r in results:
@@ -261,7 +277,7 @@ async def sync_category(category: str, client: httpx.AsyncClient) -> List[Dict]:
     # Step 4: RSS fallback — only when very sparse
     if len(articles) < 10:
         print(f"[SYNC] Falling back to RSS for {category}")
-        rss = await fetch_rss_for_category(category)
+        rss = await fetch_rss_for_category(category, client)
         articles.extend(rss)
 
     # Deduplicate
