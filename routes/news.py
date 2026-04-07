@@ -126,7 +126,15 @@ async def get_news(
 
     # ── Exploration injection (Step 13) ──────
     explore_count = max(1, int(limit * EXPLORE_RATIO))
-    other = [a for a in db if a.get('category') != cat and a.get('_stableId') not in seen_articles]
+    main_slice_ids = {a.get('_stableId') for a in main_slice if a.get('_stableId')}
+    
+    # Pool for variety: articles not in current category AND not already in main feed
+    other = [
+        a for a in db 
+        if a.get('category') != cat 
+        and a.get('_stableId') not in seen_articles 
+        and a.get('_stableId') not in main_slice_ids
+    ]
     random.shuffle(other)
     exploration = [{**a, 'isExploration': True} for a in other[:explore_count]]
 

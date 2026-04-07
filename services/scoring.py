@@ -35,7 +35,10 @@ def calculate_score(
     user_profile: Optional[Dict] = None,
     page_depth: int = 0,
 ) -> float:
-    # ── 1. Recency ──────────────────────────────
+    # ── 1. Recency & Metadata ──────────────────
+    title_lower = str(article.get('title', '') or '').lower()
+    cat = str(article.get('category', '') or '')
+    
     age_hours = _parse_pub_date(str(article.get('publishedAt', '') or ''))
     recency = max(RECENCY_FLOOR, math.exp(-age_hours / RECENCY_HALF_LIFE))
 
@@ -69,7 +72,6 @@ def calculate_score(
     # ── 3. User Interest (Dynamic Bias) ──────────
     # Starts at high (0.8) for World/US, low (0.3) for Business/Lifestyle.
     # If user has >= 5 engagement events, the profile's score takes full dominance.
-    cat = str(article.get('category', '') or '')
     default_bias = DEFAULT_CATEGORY_PRIORITY.get(cat, 0.5)
     
     interest = default_bias
@@ -93,10 +95,8 @@ def calculate_score(
     # Merge custom category interest and specific keyword interest
     final_interest = min(1.0, interest + user_k_score)
 
-    # ── 4. Keyword Boost ─────────────────────────
-    cat = str(article.get('category', '') or '')
+    # ── 5. Global Keyword Boost ──────────────────
     keywords = BOOST_KEYWORDS.get(cat, [])
-    title_lower = str(article.get('title', '') or '').lower()
     keyword_score = 1.0 if any(k in title_lower for k in keywords) else 0.0
 
     # ── 5. Global War Priority Boost ───────────
