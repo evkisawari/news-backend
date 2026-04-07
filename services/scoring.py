@@ -11,7 +11,7 @@ import math
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
-from engine.config import (
+from services.config import (
     SCORE_RECENCY, SCORE_SOURCE, SCORE_INTEREST, SCORE_KEYWORD,
     RECENCY_HALF_LIFE, RECENCY_FLOOR, BOOST_KEYWORDS,
 )

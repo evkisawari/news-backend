@@ -16,8 +16,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from pRoutes.news   import router as news_router
-from pRoutes.events import router as events_router
+from routes.news   import router as news_router
+from routes.events import router as events_router
 
 
 # ── Scheduler ────────────────────────────────
@@ -28,7 +28,7 @@ async def _delayed_sync():
     """Initial sync fires 3 seconds after server boot."""
     await asyncio.sleep(3)
     try:
-        from engine.fetchers import sync_all_categories
+        from services.fetchers import sync_all_categories
         await sync_all_categories()
     except Exception as e:
         print(f"[BOOT SYNC ERROR] {e}")
@@ -37,7 +37,7 @@ async def _delayed_sync():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────
-    from engine.fetchers import sync_all_categories
+    from services.fetchers import sync_all_categories
 
     # Schedule repeating cron (every 12 minutes)
     scheduler.add_job(

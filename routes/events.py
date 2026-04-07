@@ -1,5 +1,5 @@
 """
-pRoutes/events.py — POST /api/news/events user event tracking.
+routes/events.py — POST /api/news/events user event tracking.
 
 Steps 14-16: Captures clicks/reads/skips, updates user profile,
 feeds the personalization loop.
@@ -9,9 +9,9 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, field_validator
 
-from engine.database import load_db
-from engine.profiles import profile_store
-from engine.config import BOOST_KEYWORDS
+from services.database import load_db
+from services.profiles import profile_store
+from services.config import BOOST_KEYWORDS
 
 router = APIRouter()
 

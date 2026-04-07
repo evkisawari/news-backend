@@ -3,8 +3,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from engine.fetchers import fetch_newsdata, fetch_gnews
-from engine.ai_queue import _generate_summary
+from services.fetchers import fetch_newsdata, fetch_gnews
+from services.ai_queue import _generate_summary
 import httpx
 
 async def test_all_integrations():

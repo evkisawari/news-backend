@@ -1,5 +1,5 @@
 """
-engine/ai_queue.py — Background OpenAI summary queue.
+services/ai_queue.py — Background OpenAI summary queue.
 
 Uses asyncio tasks to generate 55-65 word summaries for articles
 without blocking the feed response. Persists summaries to db.json.
@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 
 from openai import AsyncOpenAI
 
-from engine.config import AI_MAX_CONCURRENT, AI_MAX_QUEUE, SUMMARY_CACHE_TTL
+from services.config import AI_MAX_CONCURRENT, AI_MAX_QUEUE, SUMMARY_CACHE_TTL
 
 # ── In-process state ────────────────────────────
 _client: Optional[AsyncOpenAI] = None
@@ -103,7 +103,7 @@ async def _process_job(job: Dict):
             }
             # Persist to db.json
             try:
-                from engine.database import load_db, save_db
+                from services.database import load_db, save_db
                 db = load_db()
                 updated = False
                 for a in db:

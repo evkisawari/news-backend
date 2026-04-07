@@ -2,7 +2,7 @@ import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 
-from engine.fetchers import fetch_newsdata, fetch_gnews
+from services.fetchers import fetch_newsdata, fetch_gnews
 import httpx
 
 async def test():

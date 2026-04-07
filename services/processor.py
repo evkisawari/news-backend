@@ -1,5 +1,5 @@
 """
-engine/processor.py — Normalize, clean, deduplicate, and quality-filter articles.
+services/processor.py — Normalize, clean, deduplicate, and quality-filter articles.
 """
 import re
 import hashlib
@@ -7,7 +7,7 @@ from html.parser import HTMLParser
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse, urlencode, parse_qs
 
-from engine.config import SOURCE_WEIGHTS
+from services.config import SOURCE_WEIGHTS
 
 _GARBAGE_DOMAINS = {
     'guim.co.uk', 'cnn.it', 'bit.ly', 'tinyurl.com',

@@ -1,5 +1,5 @@
 """
-engine/database.py — Thread-safe JSON article store.
+services/database.py — Thread-safe JSON article store.
 """
 import json
 import threading
@@ -25,7 +25,7 @@ def load_db() -> List[Dict[str, Any]]:
 
 def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str, Any]]:
     try:
-        from engine.config import ARTICLE_MAX_AGE_HRS, DB_MAX_PER_CATEGORY, CATEGORIES
+        from services.config import ARTICLE_MAX_AGE_HRS, DB_MAX_PER_CATEGORY, CATEGORIES
 
         now = datetime.now(timezone.utc)
         fresh = []

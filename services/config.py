@@ -1,5 +1,5 @@
 """
-engine/config.py — All constants, source definitions, and mappings.
+services/config.py — All constants, source definitions, and mappings.
 """
 
 # ──────────────────────────────────────────────

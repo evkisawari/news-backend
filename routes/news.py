@@ -1,5 +1,5 @@
 """
-pRoutes/news.py — GET /api/news feed endpoint.
+routes/news.py — GET /api/news feed endpoint.
 
 Steps 12-13: Cursor pagination + 15% exploration injection.
 """
@@ -13,11 +13,11 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
-from engine.database import load_db
-from engine.profiles import profile_store
-from engine.scoring import calculate_score
-from engine.ai_queue import get_cached_summary, enqueue
-from engine.config import CATEGORY_ALIASES, FEED_DEFAULT_LIMIT, EXPLORE_RATIO, COOLDOWN_SECONDS
+from services.database import load_db
+from services.profiles import profile_store
+from services.scoring import calculate_score
+from services.ai_queue import get_cached_summary, enqueue
+from services.config import CATEGORY_ALIASES, FEED_DEFAULT_LIMIT, EXPLORE_RATIO, COOLDOWN_SECONDS
 
 router = APIRouter()
 
@@ -55,7 +55,7 @@ async def get_news(
 
     # ── Background refresh (with cooldown) ────
     if fresh:
-        from engine.fetchers import sync_all_categories
+        from services.fetchers import sync_all_categories
         now = time.time()
         last = _cooldowns.get(cat, 0.0)
         if now - last > COOLDOWN_SECONDS:
@@ -71,7 +71,7 @@ async def get_news(
 
     if not pool:
         # Nothing stored yet — trigger sync and return empty
-        from engine.fetchers import sync_all_categories
+        from services.fetchers import sync_all_categories
         asyncio.create_task(sync_all_categories())
         return JSONResponse({
             'success': True, 'type': cat,

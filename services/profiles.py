@@ -1,5 +1,5 @@
 """
-engine/profiles.py — Anonymous user profile store.
+services/profiles.py — Anonymous user profile store.
 
 Persists category preference scores and keyword counts to user_profiles.json.
 Updates are non-blocking (run_in_executor).

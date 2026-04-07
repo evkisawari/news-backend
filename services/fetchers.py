@@ -1,5 +1,5 @@
 """
-engine/fetchers.py — Multi-source news fetching pipeline.
+services/fetchers.py — Multi-source news fetching pipeline.
 
 Priority cascade per category:
   1. Newsdata.io  (primary   — structured, image-guaranteed)
@@ -16,16 +16,16 @@ from typing import List, Dict, Any
 import httpx
 import feedparser
 
-from engine.config import (
+from services.config import (
     CATEGORIES, NEWSDATA_CATEGORIES, GNEWS_TOPICS,
     RSS_SOURCES, SOURCE_WEIGHTS, TARGET_PER_CATEGORY,
 )
-from engine.processor import (
+from services.processor import (
     normalize_article, deduplicate, quality_filter,
     make_fingerprint, strip_html, clean_url, is_english, is_valid_image,
 )
-from engine.scoring import calculate_score
-from engine.database import save_db
+from services.scoring import calculate_score
+from services.database import save_db
 
 _RSS_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
