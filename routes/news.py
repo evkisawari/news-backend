@@ -150,12 +150,25 @@ async def get_news(
     articles = []
     for idx, item in enumerate(combined):
         ai = get_cached_summary(item.get('url', '')) or item.get('aiSummary')
-        desc = ai or (item.get('description') or '')[:400]
+        title = (item.get('title') or '').strip()
+        raw_desc = (item.get('description') or '').strip()
+        
+        # Redundancy Filter: If no AI summary, check if description is just the title
+        desc = ai
+        if not ai:
+            # Clean up the raw description (strip HTML and whitespace)
+            clean_raw = raw_desc.replace('\n', ' ').strip()
+            # If the description is just the title, or is too short to be useful, we hide it for a cleaner UI
+            if clean_raw == title or len(clean_raw.split()) < 5:
+                desc = None
+            else:
+                desc = clean_raw[:400]
+
         image = item.get('image', '')
         articles.append({
             'id':           start_idx + idx + 1,
             'stableId':     item.get('_stableId', ''),
-            'title':        item.get('title', ''),
+            'title':        title,
             'description':  desc,
             'hasAiSummary': bool(ai),
             'image':        image if str(image).startswith('http') else None,
@@ -167,10 +180,16 @@ async def get_news(
             'isExploration': bool(item.get('isExploration', False)),
         })
 
-    # Enqueue AI
-    for i, a in enumerate(main_slice[:10]):
+    # Enqueue AI (Step 14: Parallel summarization)
+    for i, a in enumerate(main_slice[:12]):
         if not a.get('aiSummary') and not get_cached_summary(a.get('url', '')):
-            enqueue(a, priority=50 - i)
+            # CRITICAL: If description is redundant or missing, give it MAX priority
+            # to hide the raw title from the user as fast as possible.
+            has_desc = bool((a.get('description') or '').strip())
+            is_redundant = (a.get('description') or '').strip() == (a.get('title') or '').strip()
+            
+            prio = 100 if (not has_desc or is_redundant) else (50 - i)
+            enqueue(a, priority=prio)
 
     return JSONResponse({
         'success':    True,
