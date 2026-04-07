@@ -100,7 +100,8 @@ async def get_news(
         seen_articles = []
         if userId:
             # We must use a thread to cleanly wipe safely in standard sync SQLAlchemy code
-            asyncio.create_task(asyncio.to_thread(profile_store.mark_articles_seen, userId, [], True))
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, profile_store.mark_articles_seen, userId, [], True)
 
     pool = unseen_pool
 
@@ -133,7 +134,8 @@ async def get_news(
     # ── Mark as seen asynchronously ───────────
     if userId:
         served_ids = [a.get('_stableId') for a in combined if a.get('_stableId')]
-        asyncio.create_task(asyncio.to_thread(profile_store.mark_articles_seen, userId, served_ids))
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, profile_store.mark_articles_seen, userId, served_ids)
 
     articles = []
     for idx, item in enumerate(combined):
