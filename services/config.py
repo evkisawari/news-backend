@@ -113,8 +113,21 @@ RSS_SOURCES: list = [
 ]
 
 # ──────────────────────────────────────────────
-# SCORING WEIGHTS
+# SCORING DEFAULTS
 # ──────────────────────────────────────────────
+# If guest or low-engagement user, use these starting points
+DEFAULT_CATEGORY_PRIORITY = {
+    'world':      0.80,
+    'us':         0.80,
+    'science':    0.50,
+    'technology': 0.50,
+    'business':   0.30,
+    'lifestyle':  0.30,
+}
+
+# Applied regardless of category if title contains these
+WAR_KEYWORDS = ['war', 'conflict', 'invasion', 'military', 'frontline', 'strike', 'attack', 'ceasefire', 'border']
+
 SCORE_RECENCY  = 0.40
 SCORE_SOURCE   = 0.20
 SCORE_INTEREST = 0.25

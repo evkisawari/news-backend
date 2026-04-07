@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional
 from services.config import (
     SCORE_RECENCY, SCORE_SOURCE, SCORE_INTEREST, SCORE_KEYWORD,
     RECENCY_HALF_LIFE, RECENCY_FLOOR, BOOST_KEYWORDS,
+    DEFAULT_CATEGORY_PRIORITY, WAR_KEYWORDS
 )
 
 
@@ -59,11 +60,20 @@ def calculate_score(
     weight = float(article.get('_weight', 1.0))
     source_score = min(1.0, weight / 1.5)
 
-    # ── 3. User Interest ─────────────────────────
-    interest = 0.5  # neutral default
+    # ── 3. User Interest (Dynamic Bias) ──────────
+    # Starts at high (0.8) for World/US, low (0.3) for Business/Lifestyle.
+    # If user has >= 5 engagement events, the profile's score takes full dominance.
+    cat = str(article.get('category', '') or '')
+    default_bias = DEFAULT_CATEGORY_PRIORITY.get(cat, 0.5)
+    
+    interest = default_bias
     if user_profile and user_profile.get('categoryScores'):
-        cat = str(article.get('category', '') or '')
-        interest = float(user_profile['categoryScores'].get(cat, 0.5))
+        custom = float(user_profile['categoryScores'].get(cat, default_bias))
+        events = int(user_profile.get('totalEvents', 0))
+        
+        # Smoothly transition from Default Bias to User Choice over 5 clicks
+        alpha = min(1.0, events / 5.0)
+        interest = (1.0 - alpha) * default_bias + (alpha * custom)
 
     # ── 4. Keyword Boost ─────────────────────────
     cat = str(article.get('category', '') or '')
@@ -71,10 +81,17 @@ def calculate_score(
     title_lower = str(article.get('title', '') or '').lower()
     keyword_score = 1.0 if any(k in title_lower for k in keywords) else 0.0
 
+    # ── 5. Global War Priority Boost ───────────
+    # If any article contains war terms, it gets an additional +0.15 boost
+    war_boost = 0.0
+    if any(k in title_lower for k in WAR_KEYWORDS):
+        war_boost = 0.15
+
     score = (
         weight_recency  * recency       +
         SCORE_SOURCE   * source_score  +
         weight_interest * interest      +
-        SCORE_KEYWORD  * keyword_score
+        SCORE_KEYWORD  * keyword_score  +
+        war_boost
     )
     return round(min(1.0, max(0.0, score)), 4)

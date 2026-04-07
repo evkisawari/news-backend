@@ -103,7 +103,8 @@ async def get_news(
 
 
     # ── Determine Progression Depth ───────────
-    start_idx  = decode_cursor(cursor) if cursor else 0
+    # If fresh=true (Pull-to-Refresh), we always reset to index 0
+    start_idx  = 0 if fresh else (decode_cursor(cursor) if cursor else 0)
     page_depth = start_idx // max(1, limit)
 
     # ── Dynamic Time-Weighted Scoring ──────────
