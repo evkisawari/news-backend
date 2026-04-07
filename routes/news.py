@@ -112,16 +112,33 @@ async def get_news(
     page_depth = start_idx // max(1, limit)
 
     # ── Dynamic Time-Weighted Scoring ──────────
-    # Old articles can win based on depth rules
-    pool = [{**a, '_score': calculate_score(a, profile, page_depth)} for a in pool]
-    pool.sort(key=lambda x: x.get('_score', 0), reverse=True)
+    # We rank the UNSEEN pool to find the best NEW stories.
+    unseen_pool = [{**a, '_score': calculate_score(a, profile, page_depth)} for a in unseen_pool]
+    unseen_pool.sort(key=lambda x: x.get('_score', 0), reverse=True)
 
-    # ── Pagination slice ─────────────────────
-    # Since we explicitly filter seen items, the top of the pool IS our target slice!
-    main_slice = pool[:limit]
+    # ── Diversity Picker (Home Mix Fix) ────────
+    if cat in ['home', 'all']:
+        # Ensure Variety: Pick top 5 from each category, then sort by score.
+        per_cat = {}
+        for a in unseen_pool:
+            c = a.get('category', 'unknown')
+            if c not in per_cat: per_cat[c] = []
+            if len(per_cat[c]) < 5:
+                per_cat[c].append(a)
+        
+        main_slice = []
+        for c_list in per_cat.values():
+            main_slice.extend(c_list)
+            
+        # Re-sort the diversified list so the absolute best still lead
+        main_slice.sort(key=lambda x: x.get('_score', 0), reverse=True)
+        main_slice = main_slice[:limit]
+    else:
+        # Standard mode: top of the pool
+        main_slice = unseen_pool[:limit]
     
     next_idx   = start_idx + len(main_slice)
-    has_more   = len(pool) > limit
+    has_more   = len(unseen_pool) > limit
     next_cursor = encode_cursor(next_idx) if has_more else None
 
     # ── Exploration injection (Step 13) ──────
