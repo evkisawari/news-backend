@@ -94,7 +94,10 @@ def is_english(text: str) -> bool:
 
 
 def make_fingerprint(title: str) -> str:
-    normalized = re.sub(r'[^a-z0-9]', '', title.lower())[:60]
+    # ── Aggressive Normalization ──
+    # Remove source branding (e.g. " - BBC News", " | CNN") to catch cross-source dupes
+    clean_title = re.sub(r'\s+[-|]\s+.*$', '', title)
+    normalized = re.sub(r'[^a-z0-9]', '', clean_title.lower())[:80]
     return hashlib.md5(normalized.encode()).hexdigest()
 
 

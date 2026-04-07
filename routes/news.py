@@ -8,6 +8,7 @@ import json
 import random
 import time
 from datetime import datetime, timezone
+import difflib
 import asyncio
 from typing import Optional
 
@@ -90,10 +91,9 @@ async def get_news(
             'meta': {'poolSize': 0, 'personalized': False},
         })
 
-    # ── Filter seen articles ──
+    # ── Filter seen articles (Strict Mode) ──
     unseen_pool = [a for a in pool if a.get('_stableId') not in seen_articles]
-    if len(unseen_pool) < limit:
-        unseen_pool = pool # Fallback if empty
+    # No fallback! If user is caught up, they stay caught up until the next "Drip" or "Sync".
 
     # ── Pagination Offset ──
     start_idx  = 0 if fresh else (decode_cursor(cursor) if cursor else 0)
@@ -103,6 +103,19 @@ async def get_news(
     noise = (random.random() * 0.05) if (fresh or start_idx == 0) else 0.0
     unseen_pool = [{**a, '_score': calculate_score(a, profile, page_depth) + noise} for a in unseen_pool]
     unseen_pool.sort(key=lambda x: x.get('_score', 0), reverse=True)
+
+    # ── Fuzzy Deduplication (Clones Wipeout) ──
+    # If two articles have > 85% similar titles, we drop the lower-quality copy
+    safe_pool = []
+    seen_titles = []
+    for a in unseen_pool:
+        title = a.get('title', '').lower()
+        if not any(difflib.SequenceMatcher(None, title, t).ratio() > 0.85 for t in seen_titles[:60]):
+            safe_pool.append(a)
+            seen_titles.append(title)
+        else:
+            pass # Caught a clone! Skip it.
+    unseen_pool = safe_pool
 
     # ── Screen Partitioning ──
     if cat in ['home', 'all']:
