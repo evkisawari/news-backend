@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         sync_all_categories,
         trigger='interval',
-        minutes=12,
+        minutes=10,
         id='news_sync',
         replace_existing=True,
         max_instances=1,          # Never overlap
