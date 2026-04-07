@@ -66,8 +66,19 @@ async def get_news(
     profile = profile_store.get_profile(userId) if userId else None
 
     # ── Load + filter by category ─────────────
-    db = load_db()
-    pool = [a for a in db if a.get('category') == cat]
+    try:
+        db = load_db()
+        pool = [a for a in db if a.get('category') == cat]
+    except Exception as e:
+        print(f"[API ERROR] Failed to load news from DB: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                'success': False,
+                'error': 'Database connectivity issue',
+                'detail': str(e)
+            }
+        )
 
     if not pool:
         # Nothing stored yet — trigger sync and return empty

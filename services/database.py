@@ -2,7 +2,7 @@
 services/database.py — PostgreSQL article storage & deduplication.
 """
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -65,7 +65,8 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                     db.add(new_art)
                     count += 1
             except Exception as e:
-                print(f"[DB] Item save error: {e}")
+                print(f"[DB] Item save error for stable_id {a.get('_stableId')}: {e}")
+                db.rollback() # Rollback the individual item failure to keep session clean
 
         db.commit()
         
@@ -115,10 +116,21 @@ def _parse_dt(raw: Any) -> Optional[datetime]:
     if not raw: return None
     if isinstance(raw, datetime): return raw
     try:
-        # Handle '2026-04-07 13:00:00' or ISO
+        # Handle '2026-04-07 13:00:00', ISO, or GNews format
         clean = str(raw).replace('Z', '+00:00').replace(' ', 'T')
+        # If it's a short date like '2026-04-07', fromisoformat works
         dt = datetime.fromisoformat(clean)
-        return dt.replace(tzinfo=None) # store as naive UTC
-    except Exception:
-        return None
+        # Ensure it's naive UTC as per our convention
+        if dt.tzinfo:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+    except Exception as e:
+        # Fallback for GNews style or others
+        try:
+            from dateutil import parser
+            dt = parser.parse(str(raw))
+            return dt.replace(tzinfo=None)
+        except Exception:
+            print(f"[DB] Date parse failed for '{raw}': {e}")
+            return None
 
