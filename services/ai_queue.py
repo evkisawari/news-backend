@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
 
 from services.config import AI_MAX_CONCURRENT, AI_MAX_QUEUE, SUMMARY_CACHE_TTL
+from services.scraper import scrape_article
 
 # ── In-process state ────────────────────────────
 _client: Optional[AsyncOpenAI] = None
@@ -95,7 +96,12 @@ async def _process_job(job: Dict):
 
     _in_flight.add(url)
     try:
-        summary = await _generate_summary(article)
+        # 1. Attempt to scrape 250 words of real context from the source URL
+        scraped_text = await scrape_article(url, max_words=250)
+        
+        # 2. Generate summary (using scraped text if available, else original snippet)
+        summary = await _generate_summary(article, rich_text=scraped_text)
+        
         if summary:
             _summary_cache[url] = {
                 'text': summary,
@@ -121,9 +127,16 @@ async def _process_job(job: Dict):
         _in_flight.discard(url)
 
 
-async def _generate_summary(article: Dict) -> Optional[str]:
-    text = f"{article.get('title', '')}. {article.get('description', '') or ''}".strip()
-    if len(text) < 50:
+async def _generate_summary(article: Dict, rich_text: Optional[str] = None) -> Optional[str]:
+    # Use scraped text if available, fallback to Title + Description snippet
+    if rich_text and len(rich_text) > 100:
+        context = f"TITLE: {article.get('title', '')}\nCONTENT: {rich_text}"
+        mode = "SUMMARIZE AND REWRITE"
+    else:
+        context = f"{article.get('title', '')}. {article.get('description', '') or ''}".strip()
+        mode = "EXPAND AND REWRITE"
+
+    if len(context) < 50:
         return None
 
     try:
@@ -133,15 +146,14 @@ async def _generate_summary(article: Dict) -> Optional[str]:
                 "role": "user",
                 "content": (
                     "You are a professional news editor writing final 60-word articles for a mobile news app.\n"
-                    "EXPAND AND REWRITE the provided news snippet into exactly 55-65 words.\n"
+                    f"{mode} the provided information into exactly 55-65 words.\n"
                     "Rules:\n"
-                    "- Flesh out the context logically based on the provided title and snippet.\n"
                     "- Focus on key facts: who, what, where, why.\n"
                     "- Do NOT repeat the headline directly.\n"
                     "- Do NOT say 'the article says' or 'according to'.\n"
                     "- Write in a highly engaging, professional journalistic tone as if it is the full story. Single paragraph.\n"
-                    "- Return ONLY the expanded rewritten text.\n\n"
-                    f"Snippet: {text[:1500]}"
+                    "- Return ONLY the rewritten text.\n\n"
+                    f"Information: {context[:2000]}"
                 ),
             }],
             max_tokens=150,
