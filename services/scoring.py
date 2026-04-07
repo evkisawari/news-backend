@@ -1,5 +1,5 @@
 """
-engine/scoring.py — Personalized scoring engine.
+services/scoring.py — Personalized scoring engine.
 
 Composite score:
   Recency  (40%) — exponential decay, 12h half-life

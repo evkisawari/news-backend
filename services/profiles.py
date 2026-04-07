@@ -1,18 +1,10 @@
 """
-services/profiles.py — Anonymous user profile store.
-
-Persists category preference scores and keyword counts to user_profiles.json.
-Updates are non-blocking (run_in_executor).
+services/profiles.py — PostgreSQL user profile store.
 """
-import json
-import asyncio
-import threading
-from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-PROFILES_PATH = Path(__file__).parent.parent / "user_profiles.json"
-_lock = threading.Lock()
+from services.models import SessionLocal, UserProfile
 
 # ── Score clamp bounds ──────────────────────────
 CAT_SCORE_MIN = 0.10
@@ -27,56 +19,41 @@ EVENT_BOOSTS = {
 
 
 class UserProfileStore:
-    def __init__(self):
-        self._profiles: Dict[str, Dict] = {}
-        self._load()
-
-    # ── Persistence ─────────────────────────────
-    def _load(self):
-        try:
-            if PROFILES_PATH.exists():
-                with open(PROFILES_PATH, 'r', encoding='utf-8') as f:
-                    self._profiles = json.load(f)
-            print(f"[PROFILES] Loaded {len(self._profiles)} user profiles.")
-        except Exception as e:
-            print(f"[PROFILES] Load error: {e}")
-            self._profiles = {}
-
-    def _save(self):
-        try:
-            with _lock:
-                with open(PROFILES_PATH, 'w', encoding='utf-8') as f:
-                    json.dump(self._profiles, f, indent=2)
-        except Exception as e:
-            print(f"[PROFILES] Save error: {e}")
-
-    def _schedule_save(self):
-        """Non-blocking background save."""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.run_in_executor(None, self._save)
-            else:
-                self._save()
-        except Exception:
-            self._save()
-
-    # ── Profile access ──────────────────────────
+    """Manages user preference persistence (Step 15: Feedback loop)."""
+    
     def get_profile(self, user_id: str) -> Dict[str, Any]:
-        if not user_id:
-            return {}
-        if user_id not in self._profiles:
-            self._profiles[user_id] = {
-                'userId':         user_id,
-                'categoryScores': {},   # category → float [0.1, 1.0]
-                'keywordScores':  {},   # keyword  → int count
-                'totalEvents':    0,
-                'createdAt':      datetime.utcnow().isoformat(),
-                'lastUpdated':    datetime.utcnow().isoformat(),
+        """Fetch profile from SQL (Step 12: Weighted scoring)."""
+        if not user_id: return {}
+        
+        db = SessionLocal()
+        try:
+            row = db.query(UserProfile).filter_by(user_id=user_id).first()
+            if not row:
+                # Create default
+                row = UserProfile(
+                    user_id=user_id,
+                    category_scores={},
+                    keyword_scores={},
+                    total_events=0
+                )
+                db.add(row)
+                db.commit()
+                db.refresh(row)
+            
+            return {
+                'userId':         row.user_id,
+                'categoryScores': row.category_scores or {},
+                'keywordScores':  row.keyword_scores or {},
+                'totalEvents':    row.total_events,
+                'createdAt':      row.created_at.isoformat() if row.created_at else '',
+                'lastUpdated':    row.last_updated.isoformat() if row.last_updated else '',
             }
-        return self._profiles[user_id]
+        except Exception as e:
+            print(f"[PROFILES] Fetch error: {e}")
+            return {}
+        finally:
+            db.close()
 
-    # ── Profile update (Step 15-16: Feedback Loop) ──
     def update_profile(
         self,
         user_id: str,
@@ -85,38 +62,50 @@ class UserProfileStore:
         keywords: Optional[List[str]] = None,
         duration: int = 0,
     ):
-        if not user_id:
-            return
+        """Update scores in SQL (Step 16: Non-blocking feedback)."""
+        if not user_id: return
+        
+        db = SessionLocal()
+        try:
+            row = db.query(UserProfile).filter_by(user_id=user_id).first()
+            if not row:
+                row = UserProfile(user_id=user_id, category_scores={}, keyword_scores={})
+                db.add(row)
 
-        profile = self.get_profile(user_id)
-        cat = (category or '').lower().strip()
+            cat = (category or '').lower().strip()
+            
+            # ── 1. Category Score ──────────────────
+            if cat:
+                scores = dict(row.category_scores or {})
+                current = float(scores.get(cat, 0.5))
+                base_delta = EVENT_BOOSTS.get(event, 0.0)
 
-        # ── Category score adjustment ────────────
-        if cat:
-            current = float(profile['categoryScores'].get(cat, 0.5))
-            base_delta = EVENT_BOOSTS.get(event, 0.0)
+                if event == 'read':
+                    duration_bonus = min(0.12, (duration or 0) / 300.0)
+                    base_delta += duration_bonus
 
-            # For 'read', add duration bonus (max +0.12 for 5+ min reads)
-            if event == 'read':
-                duration_bonus = min(0.12, (duration or 0) / 300.0)
-                base_delta += duration_bonus
+                new_score = round(max(CAT_SCORE_MIN, min(CAT_SCORE_MAX, current + base_delta)), 4)
+                scores[cat] = new_score
+                row.category_scores = scores
 
-            new_score = current + base_delta
-            profile['categoryScores'][cat] = round(
-                max(CAT_SCORE_MIN, min(CAT_SCORE_MAX, new_score)), 4
-            )
+            # ── 2. Keyword Counts ──────────────────
+            if keywords:
+                k_scores = dict(row.keyword_scores or {})
+                for kw in keywords:
+                    k_scores[kw] = k_scores.get(kw, 0) + 1
+                row.keyword_scores = k_scores
 
-        # ── Keyword counts ───────────────────────
-        for kw in (keywords or []):
-            profile['keywordScores'][kw] = profile['keywordScores'].get(kw, 0) + 1
-
-        profile['totalEvents'] = profile.get('totalEvents', 0) + 1
-        profile['lastUpdated'] = datetime.utcnow().isoformat()
-        self._profiles[user_id] = profile
-
-        # Async-persist
-        self._schedule_save()
+            row.total_events = (row.total_events or 0) + 1
+            row.last_updated = datetime.utcnow()
+            
+            db.commit()
+        except Exception as e:
+            print(f"[PROFILES] Update error: {e}")
+            db.rollback()
+        finally:
+            db.close()
 
 
 # Singleton
 profile_store = UserProfileStore()
+

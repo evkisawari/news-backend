@@ -38,6 +38,10 @@ async def _delayed_sync():
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────
     from services.fetchers import sync_all_categories
+    from services.models   import init_db
+
+    # Initialize PostgreSQL Tables (Step 1: DB Readiness)
+    init_db()
 
     # Schedule repeating cron (every 12 minutes)
     scheduler.add_job(
@@ -103,7 +107,7 @@ async def root():
 
 @app.get("/api/health", tags=["Health"])
 async def health():
-    from engine.database import load_db
+    from services.database import load_db
     db = load_db()
     return {
         "success":      True,

@@ -1,59 +1,124 @@
 """
-services/database.py — Thread-safe JSON article store.
+services/database.py — PostgreSQL article storage & deduplication.
 """
-import json
-import threading
-from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
-DB_PATH = Path(__file__).parent.parent / "db.json"
-_lock = threading.Lock()
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+
+from services.models import SessionLocal, NewsArticle
+from services.config import ARTICLE_MAX_AGE_HRS, DB_MAX_PER_CATEGORY, CATEGORIES
 
 
 def load_db() -> List[Dict[str, Any]]:
+    """Fetch all articles from PostgreSQL (Step 12: Feed generation)."""
+    db = SessionLocal()
     try:
-        if not DB_PATH.exists():
-            return []
-        with _lock:
-            with open(DB_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
+        # Fetch all articles directly, maintaining pagination/limit logic elsewhere
+        rows = db.query(NewsArticle).order_by(desc(NewsArticle.score)).all()
+        return [_to_dict(r) for r in rows]
     except Exception as e:
         print(f"[DB] Load error: {e}")
         return []
+    finally:
+        db.close()
 
 
 def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str, Any]]:
+    """Upsert articles into PostgreSQL (Step 9: Sync persistence)."""
+    db = SessionLocal()
     try:
-        from services.config import ARTICLE_MAX_AGE_HRS, DB_MAX_PER_CATEGORY, CATEGORIES
-
         now = datetime.now(timezone.utc)
-        fresh = []
+        count = 0
+        
         for a in articles:
             try:
-                raw = str(a.get('publishedAt', '') or '').replace('Z', '+00:00').replace(' ', 'T')
-                pub = datetime.fromisoformat(raw)
-                if pub.tzinfo is None:
-                    pub = pub.replace(tzinfo=timezone.utc)
-                if (now - pub).total_seconds() / 3600 < ARTICLE_MAX_AGE_HRS:
-                    fresh.append(a)
-            except Exception:
-                fresh.append(a)  # Keep if date can't be parsed
+                # ── Deduplication (Step 5: Fingerprint check) ──
+                sid = a.get('_stableId')
+                if not sid: continue
+                
+                existing = db.query(NewsArticle).filter_by(stable_id=sid).first()
+                
+                if existing:
+                    # Update score/summary if changed
+                    existing.score = a.get('_score', existing.score)
+                    if a.get('aiSummary'):
+                        existing.ai_summary = a['aiSummary']
+                else:
+                    # Insert new
+                    new_art = NewsArticle(
+                        stable_id      = sid,
+                        title          = a.get('title'),
+                        description    = a.get('description'),
+                        url            = a.get('url'),
+                        source         = a.get('source'),
+                        category       = a.get('category'),
+                        published_at   = _parse_dt(a.get('publishedAt')),
+                        image_url      = a.get('image'),
+                        score          = a.get('_score', 0.0),
+                        ai_summary     = a.get('aiSummary'),
+                        is_exploration = a.get('isExploration', False),
+                        source_type    = a.get('_sourceType'),
+                        weight         = a.get('_weight', 1.0)
+                    )
+                    db.add(new_art)
+                    count += 1
+            except Exception as e:
+                print(f"[DB] Item save error: {e}")
 
-        if sort:
-            fresh.sort(key=lambda x: x.get('_score', 0), reverse=True)
+        db.commit()
+        
+        # ── Step 8: Retention (Cleanup) ─────────────────
+        # Delete articles older than X hours
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) # naive for compare if db is naive
+        # Actually models use utcnow, let's stick to naive comparison or handle both
+        # SQLAlchemy handles naive datetimes for Postgres usually
+        from datetime import timedelta
+        limit_dt = datetime.utcnow() - timedelta(hours=ARTICLE_MAX_AGE_HRS)
+        db.query(NewsArticle).filter(NewsArticle.published_at < limit_dt).delete()
+        db.commit()
 
-        # Cap: top N total (spread across categories)
-        max_total = DB_MAX_PER_CATEGORY * len(CATEGORIES)
-        final = fresh[:max_total]
-
-        with _lock:
-            with open(DB_PATH, 'w', encoding='utf-8') as f:
-                json.dump(final, f, indent=2, ensure_ascii=False)
-
-        print(f"[DB] Saved {len(final)} articles.")
-        return final
+        print(f"[DB] Saved {count} new articles. Total archived updated.")
+        # Return all for compatibility feed logic
+        return load_db()
 
     except Exception as e:
         print(f"[DB] Save error: {e}")
+        db.rollback()
         return articles
+    finally:
+        db.close()
+
+
+def _to_dict(row: NewsArticle) -> Dict[str, Any]:
+    """Convert SQLAlchemy row to engine-compatible dictionary."""
+    return {
+        'title':         row.title,
+        'description':   row.description,
+        'url':           row.url,
+        'source':        row.source,
+        'category':      row.category,
+        'publishedAt':   row.published_at.isoformat() if row.published_at else '',
+        'image':         row.image_url,
+        'aiSummary':     row.ai_summary,
+        'hasAiSummary':  bool(row.ai_summary),
+        '_stableId':     row.stable_id,
+        '_score':        row.score,
+        'isExploration': row.is_exploration,
+        '_sourceType':   row.source_type,
+        '_weight':       row.weight,
+    }
+
+
+def _parse_dt(raw: Any) -> Optional[datetime]:
+    if not raw: return None
+    if isinstance(raw, datetime): return raw
+    try:
+        # Handle '2026-04-07 13:00:00' or ISO
+        clean = str(raw).replace('Z', '+00:00').replace(' ', 'T')
+        dt = datetime.fromisoformat(clean)
+        return dt.replace(tzinfo=None) # store as naive UTC
+    except Exception:
+        return None
+
