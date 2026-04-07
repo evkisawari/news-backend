@@ -47,6 +47,7 @@ async def track_event(payload: EventPayload):
     keywords = []
 
     try:
+        from services.config import WAR_KEYWORDS
         db = load_db()
         article = next(
             (a for a in db if a.get('_stableId') == payload.stableId),
@@ -55,8 +56,12 @@ async def track_event(payload: EventPayload):
         if article:
             category = category or article.get('category', '')
             cat_keywords = BOOST_KEYWORDS.get(category or '', [])
+            
+            # Combine category-specific boosts with Global War interest
+            potential_keywords = list(set(cat_keywords + WAR_KEYWORDS))
+            
             title_lower  = (article.get('title', '') or '').lower()
-            keywords = [kw for kw in cat_keywords if kw in title_lower]
+            keywords = [kw for kw in potential_keywords if kw in title_lower]
     except Exception as e:
         print(f"[EVENTS] Article lookup error: {e}")
 

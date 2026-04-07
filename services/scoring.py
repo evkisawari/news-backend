@@ -43,18 +43,24 @@ def calculate_score(
     # Page 0: strongly favor recent
     # Page 1: mild mix
     # Page 2+: ignore time, purely base on user interest and absolute score
-    weight_recency  = SCORE_RECENCY
-    weight_interest = SCORE_INTEREST
+    # If user has >= 10 engagement events, they are a "Power User"
+    events = int(user_profile.get('totalEvents', 0)) if user_profile else 0
+    is_power_user = events >= 10
 
     if page_depth == 0:
         weight_recency = 0.60
-        weight_interest = 0.10
+        weight_interest = 0.15
     elif page_depth == 1:
         weight_recency = 0.25
-        weight_interest = 0.35
+        weight_interest = 0.45
     else:
         weight_recency = 0.05
-        weight_interest = 0.55
+        weight_interest = 0.65  # 65% weight for user interest in deep pages
+    
+    # Power users get high interest weight even on page 0 (+0.15 shift)
+    if is_power_user and page_depth == 0:
+        weight_recency -= 0.15
+        weight_interest += 0.15
 
     # ── 2. Source Trust ──────────────────────────
     weight = float(article.get('_weight', 1.0))
@@ -69,11 +75,23 @@ def calculate_score(
     interest = default_bias
     if user_profile and user_profile.get('categoryScores'):
         custom = float(user_profile['categoryScores'].get(cat, default_bias))
-        events = int(user_profile.get('totalEvents', 0))
         
         # Smoothly transition from Default Bias to User Choice over 5 clicks
         alpha = min(1.0, events / 5.0)
         interest = (1.0 - alpha) * default_bias + (alpha * custom)
+
+    # ── 4. User Keyword Interest (Hyper-Personalization) ──
+    # Check if article title contains keywords the user has engaged with before
+    user_k_score = 0.0
+    if user_profile and user_profile.get('keywordScores'):
+        u_k_scores = user_profile['keywordScores']
+        # Normalize: if a keyword has 5+ hits, it's a "Top Interest"
+        for kw, count in u_k_scores.items():
+            if kw in title_lower:
+                user_k_score += min(1.0, count / 5.0) * 0.20 # Max +0.20 per matching keyword
+    
+    # Merge custom category interest and specific keyword interest
+    final_interest = min(1.0, interest + user_k_score)
 
     # ── 4. Keyword Boost ─────────────────────────
     cat = str(article.get('category', '') or '')
@@ -90,7 +108,7 @@ def calculate_score(
     score = (
         weight_recency  * recency       +
         SCORE_SOURCE   * source_score  +
-        weight_interest * interest      +
+        weight_interest * final_interest +
         SCORE_KEYWORD  * keyword_score  +
         war_boost
     )

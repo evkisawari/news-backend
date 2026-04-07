@@ -40,36 +40,40 @@ def decode_cursor(cursor: str) -> int:
 # ── Feed endpoint ─────────────────────────────
 @router.get("")
 async def get_news(
-    type:   str            = Query('us'),
+    type:   str            = Query('home'),
     limit:  int            = Query(FEED_DEFAULT_LIMIT, ge=1, le=50),
     cursor: Optional[str]  = Query(None),
     userId: Optional[str]  = Query(None),
     fresh:  bool           = Query(False),
 ):
     # Resolve category alias
-    cat = CATEGORY_ALIASES.get(type.lower(), type.lower())
-    if cat not in [
-        'us', 'world', 'technology', 'business', 'lifestyle', 'science'
-    ]:
-        cat = 'us'
-
+    type_lower = type.lower()
+    cat = CATEGORY_ALIASES.get(type_lower, type_lower)
+    
     # ── Background refresh (with cooldown) ────
+    # Refresh if on home or specific cat
     if fresh:
         from services.fetchers import sync_all_categories
         now = time.time()
-        last = _cooldowns.get(cat, 0.0)
+        sync_cat = 'us' if cat in ['home', 'all'] else cat
+        last = _cooldowns.get(sync_cat, 0.0)
         if now - last > COOLDOWN_SECONDS:
-            _cooldowns[cat] = now
+            _cooldowns[sync_cat] = now
             asyncio.create_task(sync_all_categories())
 
     # ── Personalisation & Progression ──────────────
     profile = profile_store.get_profile(userId) if userId else None
     seen_articles = profile.get('seenArticles', []) if profile else []
 
-    # ── Load + filter by category ─────────────
+    # ── Load + filter ─────────────
     try:
         db = load_db()
-        pool = [a for a in db if a.get('category') == cat]
+        if cat in ['home', 'all']:
+            # Mix mode: Use everything
+            pool = db
+        else:
+            # Specific mode: Filter by category
+            pool = [a for a in db if a.get('category') == cat]
     except Exception as e:
         print(f"[API ERROR] Failed to load news from DB: {e}")
         return JSONResponse(
@@ -171,6 +175,65 @@ async def get_news(
             'poolSize':    len(pool),
             'startIdx':    start_idx,
             'personalized': bool(profile and profile.get('totalEvents', 0) > 0),
-            'aiQueue':     0,  # placeholder (could expose ai_queue._queue length)
+            'aiQueue':     0,
         },
     })
+
+
+# ── Search endpoint ───────────────────────────
+@router.get("/search")
+async def search_news(
+    q:     str            = Query(..., min_length=1),
+    limit: int            = Query(15, ge=1, le=50),
+    userId: Optional[str] = Query(None),
+):
+    """
+    Simple keyword search across titles and descriptions.
+    Deduplicates by stableId automatically.
+    """
+    try:
+        db = load_db()
+        query = q.lower().strip()
+        
+        # 1. Filter and match
+        matches = []
+        for a in db:
+            title = (a.get('title') or '').lower()
+            desc  = (a.get('description') or '').lower()
+            if query in title or query in desc:
+                matches.append(a)
+        
+        # 2. Deduplicate by stableId (just in case)
+        seen_ids = set()
+        unique_matches = []
+        for a in matches:
+            sid = a.get('_stableId')
+            if sid not in seen_ids:
+                seen_ids.add(sid)
+                unique_matches.append(a)
+        
+        # 3. Sort by score
+        unique_matches.sort(key=lambda x: x.get('_score', 0), reverse=True)
+        
+        # 4. Format
+        results = []
+        for a in unique_matches[:limit]:
+            results.append({
+                'stableId':    a.get('_stableId'),
+                'title':       a.get('title'),
+                'description': a.get('aiSummary') or a.get('description'),
+                'image':       a.get('image'),
+                'url':         a.get('url'),
+                'source':      a.get('source'),
+                'category':    a.get('category'),
+                'publishedAt': a.get('publishedAt'),
+            })
+
+        return {
+            'success':  True,
+            'query':    q,
+            'articles': results,
+            'total':    len(results)
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'success': False, 'error': str(e)})
