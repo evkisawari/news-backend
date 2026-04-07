@@ -121,7 +121,6 @@ async def get_news(
             'stableId':     item.get('_stableId', ''),
             'title':        item.get('title', ''),
             'description':  desc,
-            'aiSummary':    ai,
             'hasAiSummary': bool(ai),
             'image':        image if str(image).startswith('http') else None,
             'url':          item.get('url', ''),

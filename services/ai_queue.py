@@ -132,19 +132,20 @@ async def _generate_summary(article: Dict) -> Optional[str]:
             messages=[{
                 "role": "user",
                 "content": (
-                    "You are a professional news editor writing summaries for a mobile news app.\n"
-                    "Summarize the article below in EXACTLY 55-65 words.\n"
+                    "You are a professional news editor writing final 60-word articles for a mobile news app.\n"
+                    "EXPAND AND REWRITE the provided news snippet into exactly 55-65 words.\n"
                     "Rules:\n"
-                    "- Focus on key facts: who, what, where, why\n"
-                    "- Do NOT repeat the headline\n"
-                    "- Do NOT say 'the article says' or 'according to'\n"
-                    "- Neutral, factual tone. Single paragraph.\n"
-                    "- Return ONLY the summary text.\n\n"
-                    f"Article: {text[:1500]}"
+                    "- Flesh out the context logically based on the provided title and snippet.\n"
+                    "- Focus on key facts: who, what, where, why.\n"
+                    "- Do NOT repeat the headline directly.\n"
+                    "- Do NOT say 'the article says' or 'according to'.\n"
+                    "- Write in a highly engaging, professional journalistic tone as if it is the full story. Single paragraph.\n"
+                    "- Return ONLY the expanded rewritten text.\n\n"
+                    f"Snippet: {text[:1500]}"
                 ),
             }],
-            max_tokens=130,
-            temperature=0.3,
+            max_tokens=150,
+            temperature=0.5,
             timeout=8.0,
         )
         result = (response.choices[0].message.content or '').strip()

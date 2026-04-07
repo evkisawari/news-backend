@@ -115,3 +115,49 @@ async def health():
         "version":      "2.0-python",
         "articlesInDB": len(db),
     }
+
+
+# ── Database Debug Endpoints ──────────────────
+@app.get("/test-db", tags=["Debug"])
+def test_db():
+    import psycopg2, os
+    try:
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
+        cur = conn.cursor()
+        cur.execute("SELECT 1;")
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+        return {"status": "connected", "result": result}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/db-check", tags=["Debug"])
+def db_check():
+    import psycopg2, os
+    try:
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM news;")
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return {"total_articles": count}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/sample", tags=["Debug"])
+def sample():
+    import psycopg2, os
+    try:
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
+        cur = conn.cursor()
+        cur.execute("SELECT title FROM news LIMIT 5;")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return {"data": rows}
+    except Exception as e:
+        return {"error": str(e)}
