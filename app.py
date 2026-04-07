@@ -43,6 +43,13 @@ async def lifespan(app: FastAPI):
     # Initialize PostgreSQL Tables (Step 1: DB Readiness)
     init_db()
 
+    # Deep Cleanup Task: Purge existing clones on start
+    try:
+        from scripts.cleanup_db import cleanup_duplicates
+        cleanup_duplicates()
+    except Exception as e:
+        print(f"[BOOT CLEANUP ERROR] {e}")
+
     # Schedule repeating cron (every 12 minutes)
     scheduler.add_job(
         sync_all_categories,

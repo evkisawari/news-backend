@@ -32,24 +32,34 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
         now = datetime.now(timezone.utc)
         count = 0
         
+        # ── Pre-fetch existing titles for fuzzy deduplication ──
+        existing_rows = db.query(NewsArticle.title).all()
+        existing_titles = [r[0].lower() for r in existing_rows if r[0]]
+        import difflib
+
         for a in articles:
             try:
-                # ── Deduplication (Step 5: Fingerprint check) ──
                 sid = a.get('_stableId')
-                if not sid: continue
+                title = (a.get('title') or '').strip()
+                if not sid or not title: continue
                 
+                # 1. Exact ID check
                 existing = db.query(NewsArticle).filter_by(stable_id=sid).first()
                 
                 if existing:
-                    # Update score/summary if changed
                     existing.score = a.get('_score', existing.score)
-                    if a.get('aiSummary'):
-                        existing.ai_summary = a['aiSummary']
+                    if a.get('aiSummary'): existing.ai_summary = a['aiSummary']
                 else:
+                    # 2. Fuzzy Title check (Catch clones before they enter the DB)
+                    t_lower = title.lower()
+                    # Only check against the most recent 100 titles to keep it fast
+                    if any(difflib.SequenceMatcher(None, t_lower, t).ratio() > 0.85 for t in existing_titles[-100:]):
+                        continue # Skip this clone
+                    
                     # Insert new
                     new_art = NewsArticle(
                         stable_id      = sid,
-                        title          = a.get('title'),
+                        title          = title,
                         description    = a.get('description'),
                         url            = a.get('url'),
                         source         = a.get('source'),
@@ -61,10 +71,10 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                         is_exploration = a.get('isExploration', False),
                         source_type    = a.get('_sourceType'),
                         weight         = a.get('_weight', 1.0),
-                        # Stagger Release: 3 articles every 10 minutes (Batching)
                         visible_at     = datetime.utcnow() + timedelta(minutes=(count // 3) * 10)
                     )
                     db.add(new_art)
+                    existing_titles.append(t_lower)
                     count += 1
             except Exception as e:
                 print(f"[DB] Item save error for stable_id {a.get('_stableId')}: {e}")

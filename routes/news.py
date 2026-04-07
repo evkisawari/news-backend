@@ -153,11 +153,8 @@ async def get_news(
 
     combined = main_slice + exploration
     
-    # ── Async Seen Mark ──
-    if userId:
-        served_ids = [a.get('_stableId') for a in combined if a.get('_stableId')]
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, profile_store.mark_articles_seen, userId, served_ids)
+    # [LOGIC REMOVED]: We no longer mark articles as seen automatically.
+    # Articles stay in the "unseen_pool" until the user actually opens them.
 
     # ── Formatting ──
     articles = []

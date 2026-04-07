@@ -74,6 +74,10 @@ async def track_event(payload: EventPayload):
         duration=payload.duration or 0,
     )
 
+    # ONLY mark as seen if the user actually ENGAGES (read, open, save)
+    if (payload.event or '').lower() in ['read', 'open', 'click', 'save']:
+        profile_store.mark_articles_seen(payload.userId, [payload.stableId])
+
     print(
         f"[EVENT] {payload.userId[:8]}… → "
         f"{payload.event} | cat={category} | dur={payload.duration}s"
