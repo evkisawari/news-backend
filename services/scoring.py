@@ -32,10 +32,28 @@ def _parse_pub_date(raw: str) -> float:
 def calculate_score(
     article: Dict[str, Any],
     user_profile: Optional[Dict] = None,
+    page_depth: int = 0,
 ) -> float:
     # ── 1. Recency ──────────────────────────────
     age_hours = _parse_pub_date(str(article.get('publishedAt', '') or ''))
     recency = max(RECENCY_FLOOR, math.exp(-age_hours / RECENCY_HALF_LIFE))
+
+    # ── Progression Logic (Time vs Interest based on Depth) ──
+    # Page 0: strongly favor recent
+    # Page 1: mild mix
+    # Page 2+: ignore time, purely base on user interest and absolute score
+    weight_recency  = SCORE_RECENCY
+    weight_interest = SCORE_INTEREST
+
+    if page_depth == 0:
+        weight_recency = 0.60
+        weight_interest = 0.10
+    elif page_depth == 1:
+        weight_recency = 0.25
+        weight_interest = 0.35
+    else:
+        weight_recency = 0.05
+        weight_interest = 0.55
 
     # ── 2. Source Trust ──────────────────────────
     weight = float(article.get('_weight', 1.0))
@@ -54,9 +72,9 @@ def calculate_score(
     keyword_score = 1.0 if any(k in title_lower for k in keywords) else 0.0
 
     score = (
-        SCORE_RECENCY  * recency       +
+        weight_recency  * recency       +
         SCORE_SOURCE   * source_score  +
-        SCORE_INTEREST * interest      +
+        weight_interest * interest      +
         SCORE_KEYWORD  * keyword_score
     )
     return round(min(1.0, max(0.0, score)), 4)

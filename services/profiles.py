@@ -34,6 +34,7 @@ class UserProfileStore:
                     user_id=user_id,
                     category_scores={},
                     keyword_scores={},
+                    seen_articles=[],
                     total_events=0
                 )
                 db.add(row)
@@ -44,6 +45,7 @@ class UserProfileStore:
                 'userId':         row.user_id,
                 'categoryScores': row.category_scores or {},
                 'keywordScores':  row.keyword_scores or {},
+                'seenArticles':   row.seen_articles or [],
                 'totalEvents':    row.total_events,
                 'createdAt':      row.created_at.isoformat() if row.created_at else '',
                 'lastUpdated':    row.last_updated.isoformat() if row.last_updated else '',
@@ -101,10 +103,34 @@ class UserProfileStore:
             db.commit()
         except Exception as e:
             print(f"[PROFILES] Update error: {e}")
-            db.rollback()
         finally:
             db.close()
 
+    def mark_articles_seen(self, user_id: str, stable_ids: List[str], reset: bool = False):
+        """Append articles to user's seen list, or reset it. (Step 15b: Stateful progress)."""
+        if not user_id or (not stable_ids and not reset): return
+
+        db = SessionLocal()
+        try:
+            row = db.query(UserProfile).filter_by(user_id=user_id).first()
+            if not row:
+                row = UserProfile(user_id=user_id, category_scores={}, keyword_scores={}, seen_articles=[])
+                db.add(row)
+            
+            if reset:
+                row.seen_articles = []
+            else:
+                existing = row.seen_articles or []
+                # append without duplicates, limit to latest 3000 to save space
+                new_seen = list(set(existing + stable_ids))
+                row.seen_articles = new_seen[-3000:]
+            
+            db.commit()
+        except Exception as e:
+            print(f"[PROFILES] Seen tracking error: {e}")
+            db.rollback()
+        finally:
+            db.close()
 
 # Singleton
 profile_store = UserProfileStore()

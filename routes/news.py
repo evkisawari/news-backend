@@ -62,8 +62,9 @@ async def get_news(
             _cooldowns[cat] = now
             asyncio.create_task(sync_all_categories())
 
-    # ── Personalisation ───────────────────────
+    # ── Personalisation & Progression ──────────────
     profile = profile_store.get_profile(userId) if userId else None
+    seen_articles = profile.get('seenArticles', []) if profile else []
 
     # ── Load + filter by category ─────────────
     try:
@@ -90,26 +91,50 @@ async def get_news(
             'meta': {'poolSize': 0, 'personalized': False},
         })
 
-    # ── Re-score with user profile if we have engagement history ──
-    if profile and profile.get('totalEvents', 0) > 0:
-        pool = [{**a, '_score': calculate_score(a, profile)} for a in pool]
+    # ── Filter out seen articles (never repeat) ──
+    unseen_pool = [a for a in pool if a.get('_stableId') not in seen_articles]
+    
+    if len(unseen_pool) < limit:
+        # Fallback: Loop back! Wipe memory if user ran completely out of unseen content.
+        unseen_pool = pool
+        seen_articles = []
+        if userId:
+            # We must use a thread to cleanly wipe safely in standard sync SQLAlchemy code
+            asyncio.create_task(asyncio.to_thread(profile_store.mark_articles_seen, userId, [], True))
+
+    pool = unseen_pool
+
+    # ── Determine Progression Depth ───────────
+    start_idx  = decode_cursor(cursor) if cursor else 0
+    page_depth = start_idx // max(1, limit)
+
+    # ── Dynamic Time-Weighted Scoring ──────────
+    # Old articles can win based on depth rules
+    pool = [{**a, '_score': calculate_score(a, profile, page_depth)} for a in pool]
     pool.sort(key=lambda x: x.get('_score', 0), reverse=True)
 
-    # ── Cursor pagination ─────────────────────
-    start_idx  = decode_cursor(cursor) if cursor else 0
-    main_slice = pool[start_idx: start_idx + limit]
+    # ── Pagination slice ─────────────────────
+    # Since we explicitly filter seen items, the top of the pool IS our target slice!
+    main_slice = pool[:limit]
+    
     next_idx   = start_idx + len(main_slice)
-    has_more   = next_idx < len(pool)
+    has_more   = len(pool) > limit
     next_cursor = encode_cursor(next_idx) if has_more else None
 
     # ── Exploration injection (Step 13) ──────
     explore_count = max(1, int(limit * EXPLORE_RATIO))
-    other = [a for a in db if a.get('category') != cat]
+    other = [a for a in db if a.get('category') != cat and a.get('_stableId') not in seen_articles]
     random.shuffle(other)
     exploration = [{**a, 'isExploration': True} for a in other[:explore_count]]
 
     # ── Build response ────────────────────────
     combined = main_slice + exploration
+    
+    # ── Mark as seen asynchronously ───────────
+    if userId:
+        served_ids = [a.get('_stableId') for a in combined if a.get('_stableId')]
+        asyncio.create_task(asyncio.to_thread(profile_store.mark_articles_seen, userId, served_ids))
+
     articles = []
     for idx, item in enumerate(combined):
         ai  = get_cached_summary(item.get('url', '')) or item.get('aiSummary')
