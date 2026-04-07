@@ -1,0 +1,113 @@
+"""
+main.py — Priority News Engine v2.0 (Python / FastAPI)
+
+Startup sequence:
+  1. Register CORS + routers
+  2. Start APScheduler (every 12 min → sync_all_categories)
+  3. Kick off initial sync 3s after boot (async task)
+"""
+import asyncio
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+load_dotenv()  # Load .env before anything else
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from pRoutes.news   import router as news_router
+from pRoutes.events import router as events_router
+
+
+# ── Scheduler ────────────────────────────────
+scheduler = AsyncIOScheduler(timezone="UTC")
+
+
+async def _delayed_sync():
+    """Initial sync fires 3 seconds after server boot."""
+    await asyncio.sleep(3)
+    try:
+        from engine.fetchers import sync_all_categories
+        await sync_all_categories()
+    except Exception as e:
+        print(f"[BOOT SYNC ERROR] {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ───────────────────────────────
+    from engine.fetchers import sync_all_categories
+
+    # Schedule repeating cron (every 12 minutes)
+    scheduler.add_job(
+        sync_all_categories,
+        trigger='interval',
+        minutes=12,
+        id='news_sync',
+        replace_existing=True,
+        max_instances=1,          # Never overlap
+    )
+    scheduler.start()
+    print("[SCHEDULER] Cron started — sync every 12 minutes.")
+
+    # Fire initial sync as background task
+    asyncio.create_task(_delayed_sync())
+    print("[BOOT] Server ready. Initial sync in 3 seconds…")
+
+    yield  # ── Server running ──────────────────
+
+    # ── Shutdown ──────────────────────────────
+    scheduler.shutdown(wait=False)
+    print("[SHUTDOWN] Scheduler stopped.")
+
+
+# ── App factory ───────────────────────────────
+app = FastAPI(
+    title="Priority News Engine",
+    description="16-step personalized news pipeline: Newsdata.io → GNews → RSS → Scoring → Feed",
+    version="2.0-python",
+    lifespan=lifespan,
+    docs_url="/docs",       # Swagger UI
+    redoc_url="/redoc",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Routers ───────────────────────────────────
+app.include_router(news_router,   prefix="/api/news",  tags=["News Feed"])
+app.include_router(events_router, prefix="/api/news", tags=["User Events"])
+
+
+# ── Base routes ───────────────────────────────
+@app.get("/", tags=["Root"])
+async def root():
+    return {
+        "status":  "Backend operational",
+        "version": "2.0-python",
+        "engine":  "Newsdata.io → GNews → RSS → Score → Feed",
+        "endpoints": [
+            "GET  /api/news?type=us&limit=20&cursor=...&userId=...&fresh=true",
+            "POST /api/news/events  {userId, stableId, event, duration}",
+            "GET  /api/health",
+            "GET  /docs   (Swagger UI)",
+        ],
+    }
+
+
+@app.get("/api/health", tags=["Health"])
+async def health():
+    from engine.database import load_db
+    db = load_db()
+    return {
+        "success":      True,
+        "message":      "Server is awake",
+        "version":      "2.0-python",
+        "articlesInDB": len(db),
+    }

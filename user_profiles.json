@@ -1,0 +1,22 @@
+{
+  "u_test_abc123": {
+    "userId": "u_test_abc123",
+    "categoryScores": {
+      "world": 0.55
+    },
+    "keywordScores": {},
+    "totalEvents": 1,
+    "createdAt": "2026-04-07T06:58:55.412687",
+    "lastUpdated": "2026-04-07T06:58:55.412727"
+  },
+  "u_final_check": {
+    "userId": "u_final_check",
+    "categoryScores": {
+      "us": 0.55
+    },
+    "keywordScores": {},
+    "totalEvents": 1,
+    "createdAt": "2026-04-07T07:06:34.723122",
+    "lastUpdated": "2026-04-07T07:06:34.723154"
+  }
+}

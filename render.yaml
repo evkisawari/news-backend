@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: news-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt --prefer-binary
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: NEWSDATA_KEY
+        sync: false
+      - key: GNEWS_API_KEY
+        sync: false
