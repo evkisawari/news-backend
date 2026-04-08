@@ -109,10 +109,20 @@ RSS_SOURCES: list = [
     # Lifestyle
     {'name': 'BBC Lifestyle',  'url': 'http://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml',  'category': 'lifestyle',  'weight': 1.3},
     {'name': 'NYT Style',      'url': 'https://rss.nytimes.com/services/xml/rss/nyt/FashionandStyle.xml', 'category': 'lifestyle', 'weight': 1.2},
-    # Entertainment / Hollywood
-    {'name': 'Google News Movies', 'url': 'https://news.google.com/rss/search?q=Hollywood+movies+news&hl=en-US&gl=US&ceid=US:en', 'category': 'entertainment', 'weight': 1.1},
-    {'name': 'Google News Ent',    'url': 'https://news.google.com/rss/search?q=Entertainment+news&hl=en-US&gl=US&ceid=US:en',    'category': 'entertainment', 'weight': 1.1},
-    {'name': 'Variety',            'url': 'https://variety.com/feed/',                                                          'category': 'entertainment', 'weight': 1.3},
+    # Entertainment / Hollywood Elite
+    {'name': 'Variety',            'url': 'https://variety.com/feed/',                                                          'category': 'entertainment', 'weight': 1.5},
+    {'name': 'Hollywood Reporter', 'url': 'https://www.hollywoodreporter.com/feed/',                                             'category': 'entertainment', 'weight': 1.5},
+    {'name': 'Deadline',           'url': 'https://deadline.com/feed/',                                                         'category': 'entertainment', 'weight': 1.5},
+    {'name': 'TMZ',                'url': 'https://www.tmz.com/rss.xml',                                                        'category': 'entertainment', 'weight': 1.3},
+    {'name': 'People',             'url': 'https://people.com/feed/',                                                           'category': 'entertainment', 'weight': 1.4},
+    {'name': 'US Magazine',        'url': 'https://www.usmagazine.com/feed/',                                                   'category': 'entertainment', 'weight': 1.2},
+    {'name': 'ET Online',          'url': 'https://www.etonline.com/news/rss',                                                  'category': 'entertainment', 'weight': 1.3},
+    {'name': 'E! News',            'url': 'https://www.eonline.com/syndication/feeds/rssfeeds/topstories.xml',                  'category': 'entertainment', 'weight': 1.3},
+    {'name': 'CinemaBlend',        'url': 'https://www.cinemablend.com/rss.xml',                                                'category': 'entertainment', 'weight': 1.2},
+    {'name': 'Vulture',            'url': 'https://www.vulture.com/rss/index.xml',                                              'category': 'entertainment', 'weight': 1.4},
+    {'name': 'IndieWire',          'url': 'https://www.indiewire.com/feed/',                                                    'category': 'entertainment', 'weight': 1.3},
+    {'name': 'AV Club',            'url': 'https://www.avclub.com/rss',                                                         'category': 'entertainment', 'weight': 1.2},
+    {'name': 'Google News Ent',    'url': 'https://news.google.com/rss/search?q=Entertainment+news&hl=en-US&gl=US&ceid=US:en',    'category': 'entertainment', 'weight': 1.0},
     
     # Science
     {'name': 'NASA',           'url': 'https://www.nasa.gov/rss/dyn/breaking_news.rss',               'category': 'science',    'weight': 1.4},

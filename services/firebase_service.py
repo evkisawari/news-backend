@@ -36,45 +36,42 @@ def push_news_to_firebase(articles: List[Dict[str, Any]]):
 
     print(f"[FIREBASE] Syncing {len(articles)} articles to Firestore...")
     
-    # We use a batch to send multiple articles in one request (limited to 500 per batch)
-    batch = db.batch()
-    count = 0
-    
-    for a in articles:
-        # 1. Prepare data for Firebase
-        # We use stable_id as the document ID to prevent duplicates
-        doc_id = a.get('_stableId')
-        if not doc_id: continue
+    # ── Resilience: Send in small chunks of 50 to handle slow local connections ──
+    for i in range(0, len(articles), 50):
+        batch = db.batch()
+        current_chunk = articles[i : i + 50]
+        count = 0
         
-        # Firestore doesn't like keys with leading underscores
-        clean_data = {
-            'stableId':    doc_id,
-            'title':       a.get('title'),
-            'description': a.get('description'),
-            'url':         a.get('url'),
-            'source':      a.get('source'),
-            'category':    a.get('category', 'world'),
-            'image':       a.get('image'),
-            'publishedAt': a.get('publishedAt'),
-            'score':       a.get('_score', 0.0),
-            'aiSummary':   a.get('aiSummary'),
-            'visibleAt':   a.get('visibleAt'),
-            'isExploration': a.get('isExploration', False),
-            'syncedAt':    firestore.SERVER_TIMESTAMP
-        }
-
-        doc_ref = db.collection('news').document(doc_id)
-        batch.set(doc_ref, clean_data)
-        count += 1
-        
-        # Firestore batch limit is 500
-        if count >= 450:
-            batch.commit()
-            batch = db.batch()
-            count = 0
+        for a in current_chunk:
+            # Detect ID (handles both Python internal and SQL mapped formats)
+            doc_id = a.get('_stableId') or a.get('stable_id') or a.get('stableId')
+            if not doc_id: continue
             
-    batch.commit()
-    print("[FIREBASE] Done. Feed is now live and instant in Firestore.")
+            # Map fields safely for Firebase
+            clean_data = {
+                'stableId':    doc_id,
+                'title':       a.get('title', 'No Title'),
+                'description': a.get('description', ''),
+                'url':         a.get('url', ''),
+                'source':      a.get('source', 'Unknown'),
+                'category':    a.get('category', 'world').lower(),
+                'image':       a.get('image'),
+                'publishedAt': a.get('publishedAt') or a.get('published_at'),
+                'score':       float(a.get('_score') or a.get('score') or 0.0),
+                'aiSummary':   a.get('aiSummary'),
+                'isExploration': a.get('isExploration', False),
+                'syncedAt':    firestore.SERVER_TIMESTAMP
+            }
+
+            doc_ref = db.collection('news').document(doc_id)
+            batch.set(doc_ref, clean_data, merge=True)
+            count += 1
+            
+        if count > 0:
+            batch.commit()
+            print(f"[FIREBASE] Batch {i//50 + 1} ({count} items) pushed.")
+
+    print("[FIREBASE] Done. Full feed is live.")
 
 def cleanup_old_firebase_news():
     """Purge news older than 3 days from Firebase to keep it light."""
