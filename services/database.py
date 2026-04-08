@@ -31,6 +31,14 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
     # ── STEP 1: Sync to Firebase (High Priority for Flutter) ──
     try:
         if articles:
+            # 🚿 Normalization: Ensure all dates are ISO formats so Firestore sorting works
+            for a in articles:
+                raw_dt = a.get('publishedAt')
+                if raw_dt:
+                    dt = _parse_dt(raw_dt)
+                    if dt:
+                        a['publishedAt'] = dt.isoformat()
+            
             from services.firebase_service import push_news_to_firebase
             push_news_to_firebase(articles[:400])
     except Exception as e:

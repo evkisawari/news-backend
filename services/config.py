@@ -103,9 +103,8 @@ RSS_SOURCES: list = [
     {'name': 'Google News Tech', 'url': 'https://news.google.com/rss/search?q=US+technology&hl=en-US&gl=US&ceid=US:en', 'category': 'technology', 'weight': 1.1},
     # Business
     {'name': 'CNBC',           'url': 'https://www.cnbc.com/id/100003114/device/rss/rss.html',         'category': 'business',   'weight': 1.4},
-    {'name': 'Bloomberg News', 'url': 'https://news.google.com/rss/search?q=when:24h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en', 'category': 'business', 'weight': 1.5},
-    {'name': 'Google News Biz', 'url': 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en', 'category': 'business', 'weight': 1.1},
-    {'name': 'Google News Econ', 'url': 'https://news.google.com/rss/search?q=US+economy&hl=en-US&gl=US&ceid=US:en', 'category': 'business', 'weight': 1.1},
+    {'name': 'Google News Biz', 'url': 'https://news.google.com/rss/search?q=business+news&hl=en-US&gl=US&ceid=US:en', 'category': 'business', 'weight': 1.1},
+    {'name': 'Google News Finance', 'url': 'https://news.google.com/rss/search?q=finance+stock+market&hl=en-US&gl=US&ceid=US:en', 'category': 'business', 'weight': 1.1},
     # Lifestyle
     {'name': 'BBC Lifestyle',  'url': 'http://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml',  'category': 'lifestyle',  'weight': 1.3},
     {'name': 'NYT Style',      'url': 'https://rss.nytimes.com/services/xml/rss/nyt/FashionandStyle.xml', 'category': 'lifestyle', 'weight': 1.2},
@@ -158,9 +157,9 @@ RECENCY_FLOOR     = 0.10
 # ENGINE CONSTANTS
 # ──────────────────────────────────────────────
 TARGET_PER_CATEGORY  = 30    # Min articles to fetch before skipping fallback
-DB_MAX_PER_CATEGORY  = 200   # Max articles stored per category
-FEED_DEFAULT_LIMIT   = 20    # Default articles per API request
-EXPLORE_RATIO        = 0.15  # 15% exploration injection
+DB_MAX_PER_CATEGORY  = 500   # Increased for more variety
+FEED_DEFAULT_LIMIT   = 50    # Increased for bigger batches
+EXPLORE_RATIO        = 0.30  # 30% exploration injection (Double!)
 ARTICLE_MAX_AGE_HRS  = 48    # Discard articles older than this
 COOLDOWN_SECONDS     = 3600  # Min seconds between forced refreshes (1 hour)
 
