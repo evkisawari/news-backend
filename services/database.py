@@ -32,7 +32,7 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
     try:
         if articles:
             from services.firebase_service import push_news_to_firebase
-            push_news_to_firebase(articles[:200])
+            push_news_to_firebase(articles[:400])
     except Exception as e:
         print(f"[FIREBASE SYNC ERROR] {e}")
 
