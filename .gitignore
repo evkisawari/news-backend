@@ -1,4 +1,9 @@
 .env
+serviceAccountKey.json
+.venv/
+__pycache__/
+db.json
+user_profiles.json
 node_modules
 test_summary.js
 *.log
