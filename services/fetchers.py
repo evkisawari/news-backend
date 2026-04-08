@@ -11,6 +11,7 @@ All fetchers return raw article dicts; processor.py normalizes them.
 import os
 import re
 import asyncio
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 import httpx
