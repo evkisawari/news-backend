@@ -352,15 +352,15 @@ async def sync_all_categories():
             headers=_HTTP_HEADERS,
             follow_redirects=True,
         ) as client:
-            tasks = [sync_category(cat, client) for cat in CATEGORIES]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
             all_articles: List[Dict] = []
-            for i, r in enumerate(results):
-                if isinstance(r, list):
-                    all_articles.extend(r)
-                else:
-                    print(f"[SYNC ERROR] {CATEGORIES[i]}: {r}")
+            
+            # Fetch categories one-by-one to save memory on Render Free Tier
+            for cat in CATEGORIES:
+                try:
+                    category_news = await sync_category(cat, client)
+                    all_articles.extend(category_news)
+                except Exception as e:
+                    print(f"[SYNC ERROR] {cat}: {e}")
 
             # Step 5: Supplemental Reddit World News
             try:
@@ -369,7 +369,7 @@ async def sync_all_categories():
             except Exception as e:
                 print(f"[SUPPLEMENTAL ERROR] Reddit: {e}")
 
-            # Step 8: Quality filter (requires valid image + description)
+            # Step 8: Quality filter
             quality = quality_filter(all_articles)
 
         # Global dedup across categories
