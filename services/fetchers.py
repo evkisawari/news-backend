@@ -354,22 +354,22 @@ async def sync_all_categories():
             tasks = [sync_category(cat, client) for cat in CATEGORIES]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        all_articles: List[Dict] = []
-        for i, r in enumerate(results):
-            if isinstance(r, list):
-                all_articles.extend(r)
-            else:
-                print(f"[SYNC ERROR] {CATEGORIES[i]}: {r}")
+            all_articles: List[Dict] = []
+            for i, r in enumerate(results):
+                if isinstance(r, list):
+                    all_articles.extend(r)
+                else:
+                    print(f"[SYNC ERROR] {CATEGORIES[i]}: {r}")
 
-        # Step 5: Supplemental Reddit World News
-        try:
-            reddit = await fetch_reddit_worldnews(client)
-            all_articles.extend(reddit)
-        except Exception as e:
-            print(f"[SUPPLEMENTAL ERROR] Reddit: {e}")
+            # Step 5: Supplemental Reddit World News
+            try:
+                reddit = await fetch_reddit_worldnews(client)
+                all_articles.extend(reddit)
+            except Exception as e:
+                print(f"[SUPPLEMENTAL ERROR] Reddit: {e}")
 
-        # Step 8: Quality filter (requires valid image + description)
-        quality = quality_filter(all_articles)
+            # Step 8: Quality filter (requires valid image + description)
+            quality = quality_filter(all_articles)
 
         # Global dedup across categories
         final = deduplicate(quality)

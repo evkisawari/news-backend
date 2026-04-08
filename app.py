@@ -36,19 +36,25 @@ async def _delayed_sync():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Startup ───────────────────────────────
     from services.fetchers import sync_all_categories
-    from services.models   import init_db
+    
+    # ── Background Startup Tasks ───────────────────────────
+    async def _boot_tasks():
+        await asyncio.sleep(2) # Give the server a moment to settle
+        try:
+            # Initialize PostgreSQL Tables (Step 1: DB Readiness)
+            from services.models import init_db
+            init_db()
+            
+            # Deep Cleanup Task: Purge existing clones
+            from scripts.cleanup_db import cleanup_duplicates
+            cleanup_duplicates()
+            print("[BOOT TASKS] DB initialized and cleaned.")
+        except Exception as e:
+            print(f"[BOOT TASKS ERROR] {e}")
 
-    # Initialize PostgreSQL Tables (Step 1: DB Readiness)
-    init_db()
-
-    # Deep Cleanup Task: Purge existing clones on start
-    try:
-        from scripts.cleanup_db import cleanup_duplicates
-        cleanup_duplicates()
-    except Exception as e:
-        print(f"[BOOT CLEANUP ERROR] {e}")
+    # Kick off background boot processes so the main loop starts immediately
+    asyncio.create_task(_boot_tasks())
 
     # Schedule repeating cron (every 1 hour)
     scheduler.add_job(
@@ -113,13 +119,10 @@ async def root():
 
 @app.get("/api/health", tags=["Health"])
 async def health():
-    from services.database import load_db
-    db = load_db()
     return {
-        "success":      True,
-        "message":      "Server is awake",
-        "version":      "2.0-python",
-        "articlesInDB": len(db),
+        "success": True,
+        "message": "Server is awake and responding",
+        "version": "2.0-python",
     }
 
 
