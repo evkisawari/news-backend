@@ -28,8 +28,8 @@ async def lifespan(app: FastAPI):
             # Initialize DB and run cleanup
             init_db()
             
-            # Start scheduler (every 15 mins for Pro Freshness)
-            scheduler.add_job(sync_all_categories, 'interval', minutes=15, id='news_sync')
+            # Heavy Refill: Every 60 mins (500+ articles session)
+            scheduler.add_job(sync_all_categories, 'interval', minutes=60, id='news_sync')
             scheduler.start()
             print("[SERVER] News engine active.")
         except Exception as e:

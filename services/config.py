@@ -156,8 +156,8 @@ RECENCY_FLOOR     = 0.10
 # ──────────────────────────────────────────────
 # ENGINE CONSTANTS
 # ──────────────────────────────────────────────
-TARGET_PER_CATEGORY  = 100   # Pulled more per category for massive variety
-DB_MAX_PER_CATEGORY  = 1000  # Retention ceiling
+TARGET_PER_CATEGORY  = 200   # Massive refill targeting 1200+ articles total
+DB_MAX_PER_CATEGORY  = 1500  # Deep archive capacity
 FEED_DEFAULT_LIMIT   = 100   # Bigger batches for 1000+ total
 EXPLORE_RATIO        = 0.30  # 30% exploration injection (Double!)
 ARTICLE_MAX_AGE_HRS  = 120   # retention up to 5 days (User Request: 3-4 days old news)
