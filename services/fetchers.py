@@ -260,6 +260,56 @@ async def fetch_rss_for_category(category: str, client: httpx.AsyncClient) -> Li
 
 
 # ══════════════════════════════════════════════
+# STEP 5: REDDIT (SUPPLEMENTAL)
+# ══════════════════════════════════════════════
+async def fetch_reddit_worldnews(client: httpx.AsyncClient) -> List[Dict]:
+    """Fetch latest from r/worldnews JSON API."""
+    url = "https://www.reddit.com/r/worldnews/new.json?limit=25"
+    headers = {**_HTTP_HEADERS, 'User-Agent': 'PriorityNewsEngine/2.0 (by /u/NewsAppBot)'}
+    
+    try:
+        resp = await client.get(url, headers=headers, timeout=12.0)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        articles = []
+        for post in data.get('data', {}).get('children', []):
+            item = post.get('data', {})
+            title = (item.get('title') or '').strip()
+            url = clean_url(item.get('url', ''))
+            
+            if not title or not url or not is_english(title):
+                continue
+                
+            # Skip reddit threads themselves, we want the external news link
+            if 'reddit.com/r/worldnews' in url:
+                continue
+
+            image = item.get('thumbnail', '')
+            if not is_valid_image(image):
+                image = ''
+
+            articles.append({
+                'title':       title,
+                'description': f"Reddit Discussion: {item.get('ups', 0)} upvotes. {item.get('num_comments', 0)} comments.",
+                'url':         url,
+                'source':      f"r/worldnews ({item.get('domain', 'reddit')})",
+                'category':    'world',
+                'publishedAt': datetime.fromtimestamp(item.get('created_utc', 0), timezone.utc).isoformat(),
+                'image':       image,
+                '_fp':         make_fingerprint(title),
+                '_stableId':   make_fingerprint(title),
+                '_weight':     1.2,
+                '_sourceType': 'reddit',
+            })
+        print(f"[REDDIT] r/worldnews: {len(articles)} articles")
+        return articles
+    except Exception as e:
+        print(f"[REDDIT ERROR] {e}")
+        return []
+
+
+# ══════════════════════════════════════════════
 # CATEGORY SYNC (Steps 2-8 per category)
 # ══════════════════════════════════════════════
 async def sync_category(category: str, client: httpx.AsyncClient) -> List[Dict]:
@@ -310,6 +360,13 @@ async def sync_all_categories():
                 all_articles.extend(r)
             else:
                 print(f"[SYNC ERROR] {CATEGORIES[i]}: {r}")
+
+        # Step 5: Supplemental Reddit World News
+        try:
+            reddit = await fetch_reddit_worldnews(client)
+            all_articles.extend(reddit)
+        except Exception as e:
+            print(f"[SUPPLEMENTAL ERROR] Reddit: {e}")
 
         # Step 8: Quality filter (requires valid image + description)
         quality = quality_filter(all_articles)

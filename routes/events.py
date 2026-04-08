@@ -15,7 +15,7 @@ from services.config import BOOST_KEYWORDS
 
 router = APIRouter()
 
-VALID_EVENTS = {'click', 'read', 'skip', 'save'}
+VALID_EVENTS = {'click', 'read', 'skip', 'save', 'view'}
 
 
 class EventPayload(BaseModel):

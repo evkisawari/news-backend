@@ -50,21 +50,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[BOOT CLEANUP ERROR] {e}")
 
-    # Schedule repeating cron (every 12 minutes)
+    # Schedule repeating cron (every 1 hour)
     scheduler.add_job(
         sync_all_categories,
         trigger='interval',
-        minutes=10,
+        hours=1,
         id='news_sync',
         replace_existing=True,
         max_instances=1,          # Never overlap
     )
     scheduler.start()
-    print("[SCHEDULER] Cron started — sync every 12 minutes.")
+    print("[SCHEDULER] Cron started — sync every 1 hour.")
 
-    # Fire initial sync as background task
-    asyncio.create_task(_delayed_sync())
-    print("[BOOT] Server ready. Initial sync in 3 seconds…")
+    # [REMOVED] Initial sync on boot is removed to conserve API quota on Render free tier.
+    # Sync will now only happen once per hour via the scheduler or manual refresh cooldown.
 
     yield  # ── Server running ──────────────────
 

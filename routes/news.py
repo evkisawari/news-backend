@@ -53,15 +53,9 @@ async def get_news(
     type_lower = type.lower()
     cat = CATEGORY_ALIASES.get(type_lower, type_lower)
     
-    # ── Background refresh (with cooldown) ────
-    if fresh:
-        from services.fetchers import sync_all_categories
-        now = time.time()
-        sync_cat = 'us' if cat in ['home', 'all'] else cat
-        last = _cooldowns.get(sync_cat, 0.0)
-        if now - last > COOLDOWN_SECONDS:
-            _cooldowns[sync_cat] = now
-            asyncio.create_task(sync_all_categories())
+    # [REMOVED] Sync is now strictly decoupled from web requests.
+    # Flutter Pull-to-Refresh only fetches from our local DB.
+    # Global sync only happens via the hourly scheduler in app.py.
 
     # ── Personalisation ──────────────
     profile = profile_store.get_profile(userId) if userId else None
@@ -83,8 +77,6 @@ async def get_news(
         return JSONResponse(status_code=500, content={'success': False, 'error': 'Database connectivity issue', 'detail': str(e)})
 
     if not pool:
-        from services.fetchers import sync_all_categories
-        asyncio.create_task(sync_all_categories())
         return JSONResponse({
             'success': True, 'type': cat,
             'articles': [], 'total': 0, 'nextCursor': None,

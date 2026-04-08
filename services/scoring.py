@@ -51,11 +51,11 @@ def calculate_score(
     is_power_user = events >= 10
 
     if page_depth == 0:
-        weight_recency = 0.60
-        weight_interest = 0.15
+        weight_recency = 0.40  # Dropped from 0.60 to allow high-interest older news to surface
+        weight_interest = 0.35 # Increased from 0.15
     elif page_depth == 1:
-        weight_recency = 0.25
-        weight_interest = 0.45
+        weight_recency = 0.20
+        weight_interest = 0.50
     else:
         weight_recency = 0.05
         weight_interest = 0.65  # 65% weight for user interest in deep pages
