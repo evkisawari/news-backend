@@ -74,11 +74,31 @@ def push_news_to_firebase(articles: List[Dict[str, Any]]):
     print("[FIREBASE] Done. Full feed is live.")
 
 def cleanup_old_firebase_news():
-    """Purge news older than 3 days from Firebase to keep it light."""
+    """Purge news older than 24 hours from Firebase to keep it fresh and prevent 'Same data'."""
     db = get_firestore()
     if not db: return
     
-    three_days_ago = datetime.now() - timedelta(days=3)
-    # Note: FireStore queries for cleanup can be slow, usually we just let them sit 
-    # or use a TTL policy in the Firebase Console.
-    pass
+    # 24 hours ago
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    iso_cutoff = cutoff.isoformat()
+    
+    print(f"[FIREBASE] Cleaning up articles older than {iso_cutoff}...")
+    
+    try:
+        # We query for old stuff and delete it
+        docs = db.collection('news').where('publishedAt', '<', iso_cutoff).get()
+        
+        batch = db.batch()
+        count = 0
+        for doc in docs:
+            batch.delete(doc.reference)
+            count += 1
+        
+        if count > 0:
+            batch.commit()
+            print(f"[FIREBASE] Cleaned up {count} stale articles.")
+        else:
+            print("[FIREBASE] No articles found older than 24h.")
+    except Exception as e:
+        print(f"[FIREBASE] Cleanup error: {e}")

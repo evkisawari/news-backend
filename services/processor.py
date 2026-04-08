@@ -156,16 +156,47 @@ def normalize_article(raw: Dict[str, Any], source_type: str) -> Optional[Dict[st
 
 
 # ──────────────────────────────────────────────
-# DEDUPLICATE
+# DEDUPLICATE (Pro Tester: Fuzzy Version)
 # ──────────────────────────────────────────────
 def deduplicate(articles: List[Dict]) -> List[Dict]:
-    seen: set = set()
+    seen_fps: set = set()
+    seen_titles: List[set] = [] # List of sets of words for fuzzy comparison
     result = []
+    
     for a in articles:
+        # 1. Strict Fingerprint (Exact Normalized Match)
         fp = a.get('_fp')
-        if fp and fp not in seen:
-            seen.add(fp)
-            result.append(a)
+        if fp in seen_fps:
+            continue
+            
+        # 2. Fuzzy Title Comparison (Detect Clones)
+        title = a.get('title', '').lower()
+        # Create a set of significant words (length > 3)
+        words = {w for w in re.sub(r'[^a-z ]', '', title).split() if len(w) > 3}
+        
+        if not words:
+            continue
+            
+        is_clone = False
+        for seen_words in seen_titles:
+            # Overlap coefficient: size of intersection / size of smaller set
+            intersection = len(words.intersection(seen_words))
+            smaller_set_size = min(len(words), len(seen_words))
+            
+            if smaller_set_size > 0:
+                overlap = intersection / smaller_set_size
+                if overlap > 0.8: # 80% word overlap is suspicious
+                    is_clone = True
+                    break
+        
+        if is_clone:
+            continue
+            
+        # 3. Success: Keep it
+        seen_fps.add(fp)
+        seen_titles.append(words)
+        result.append(a)
+        
     return result
 
 

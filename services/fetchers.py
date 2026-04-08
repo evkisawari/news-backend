@@ -339,7 +339,7 @@ async def sync_category(category: str, client: httpx.AsyncClient) -> List[Dict]:
     scored.sort(key=lambda x: x['_score'], reverse=True)
 
     print(f"[SYNC] {category}: {len(scored)} unique scored articles")
-    return scored[:200]
+    return scored[:500] # Increased for bigger pools per category
 
 
 # ══════════════════════════════════════════════
@@ -378,7 +378,12 @@ async def sync_all_categories():
 
         # Step 9: Save
         save_db(final, sort=False)
-        print(f'[CRON] ── Done. {len(final)} quality articles saved. ──')
+        
+        # Step 10: Cleanup Stale Data in Cloud (Pro Tester Feature)
+        from services.firebase_service import cleanup_old_firebase_news
+        cleanup_old_firebase_news()
+        
+        print(f'[CRON] ── Done. {len(final)} quality articles saved & Firestore cleaned. ──')
 
     except Exception as e:
         print(f'[CRON ERROR] {e}')

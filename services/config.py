@@ -5,7 +5,7 @@ services/config.py — All constants, source definitions, and mappings.
 # ──────────────────────────────────────────────
 # CATEGORIES
 # ──────────────────────────────────────────────
-CATEGORIES = ['us', 'world', 'technology', 'business', 'lifestyle', 'science', 'entertainment']
+CATEGORIES = ['us', 'world', 'technology', 'lifestyle', 'science', 'entertainment']
 
 CATEGORY_ALIASES = {
     'finance':     'business',
@@ -150,17 +150,17 @@ SCORE_SOURCE   = 0.20
 SCORE_INTEREST = 0.25
 SCORE_KEYWORD  = 0.15
 
-RECENCY_HALF_LIFE = 12   # hours
+RECENCY_HALF_LIFE = 48   # hours
 RECENCY_FLOOR     = 0.10
 
 # ──────────────────────────────────────────────
 # ENGINE CONSTANTS
 # ──────────────────────────────────────────────
-TARGET_PER_CATEGORY  = 30    # Min articles to fetch before skipping fallback
-DB_MAX_PER_CATEGORY  = 500   # Increased for more variety
-FEED_DEFAULT_LIMIT   = 50    # Increased for bigger batches
+TARGET_PER_CATEGORY  = 100   # Pulled more per category for massive variety
+DB_MAX_PER_CATEGORY  = 1000  # Retention ceiling
+FEED_DEFAULT_LIMIT   = 100   # Bigger batches for 1000+ total
 EXPLORE_RATIO        = 0.30  # 30% exploration injection (Double!)
-ARTICLE_MAX_AGE_HRS  = 48    # Discard articles older than this
+ARTICLE_MAX_AGE_HRS  = 120   # retention up to 5 days (User Request: 3-4 days old news)
 COOLDOWN_SECONDS     = 3600  # Min seconds between forced refreshes (1 hour)
 
 # AI
