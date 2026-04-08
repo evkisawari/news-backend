@@ -26,7 +26,16 @@ def load_db() -> List[Dict[str, Any]]:
 
 
 def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str, Any]]:
-    """Upsert articles into PostgreSQL (Step 9: Sync persistence)."""
+    """Upsert articles into PostgreSQL and Firebase."""
+    
+    # ── STEP 1: Sync to Firebase (High Priority for Flutter) ──
+    try:
+        if articles:
+            from services.firebase_service import push_news_to_firebase
+            push_news_to_firebase(articles[:300])
+    except Exception as e:
+        print(f"[FIREBASE SYNC ERROR] {e}")
+
     db = SessionLocal()
     try:
         # Pre-fetch existing titles for fuzzy deduplication
@@ -53,8 +62,8 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                 else:
                     # 2. Fuzzy Title check (Catch clones before they enter the DB)
                     t_lower = title.lower()
-                    # Only check against the most recent 200 titles to keep it fast
-                    if any(difflib.SequenceMatcher(None, t_lower, t).ratio() > 0.85 for t in existing_titles[-200:]):
+                    # Deep Check: Scan the last 500 titles to ensure no repeats from yesterday
+                    if any(difflib.SequenceMatcher(None, t_lower, t).ratio() > 0.85 for t in existing_titles[-500:]):
                         continue # Skip this clone
                     
                     # Drip Feed (Per Category): 5 instantly, then 2 every 10 mins
@@ -97,16 +106,10 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
         db.query(NewsArticle).filter(NewsArticle.published_at < limit_dt).delete()
         db.commit()
 
-        print(f"[DB] Saved {count} new articles. Total archived updated.")
-        # Return all for compatibility feed logic
-        return load_db()
-
-    except Exception as e:
-        print(f"[DB] Save error: {e}")
-        db.rollback()
-        return articles
     finally:
         db.close()
+
+    return articles
 
 
 def _to_dict(row: NewsArticle) -> Dict[str, Any]:
