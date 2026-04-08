@@ -178,3 +178,17 @@ def sample():
         return {"data": rows}
     except Exception as e:
         return {"error": str(e)}
+@app.get("/api/unlock-news")
+def unlock_all():
+    from services.models import SessionLocal, NewsArticle
+    from datetime import datetime
+    db = SessionLocal()
+    try:
+        count = db.query(NewsArticle).update({"visible_at": datetime.utcnow()})
+        db.commit()
+        return {"success": True, "unlocked": count, "message": "All news is now instantly visible."}
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
+    finally:
+        db.close()

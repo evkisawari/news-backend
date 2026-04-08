@@ -29,18 +29,19 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
     """Upsert articles into PostgreSQL (Step 9: Sync persistence)."""
     db = SessionLocal()
     try:
-        now = datetime.now(timezone.utc)
-        count = 0
-        
-        # ── Pre-fetch existing titles for fuzzy deduplication ──
+        # Pre-fetch existing titles for fuzzy deduplication
         existing_rows = db.query(NewsArticle.title).all()
         existing_titles = [r[0].lower() for r in existing_rows if r[0]]
         import difflib
+
+        # Track counts per category for the Drip Feed
+        cat_counts = {c: 0 for c in CATEGORIES}
 
         for a in articles:
             try:
                 sid = a.get('_stableId')
                 title = (a.get('title') or '').strip()
+                cat = a.get('category', 'world')
                 if not sid or not title: continue
                 
                 # 1. Exact ID check
@@ -56,14 +57,18 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                     if any(difflib.SequenceMatcher(None, t_lower, t).ratio() > 0.85 for t in existing_titles[-100:]):
                         continue # Skip this clone
                     
-                    # Insert new
+                    # Drip Feed (Per Category): 5 instantly, then 2 every 10 mins
+                    cur_cat_count = cat_counts.get(cat, 0)
+                    delay_min = max(0, ((cur_cat_count - 5) // 2) * 10) if cur_cat_count > 5 else 0
+                    cat_counts[cat] = cur_cat_count + 1
+
                     new_art = NewsArticle(
                         stable_id      = sid,
                         title          = title,
                         description    = a.get('description'),
                         url            = a.get('url'),
                         source         = a.get('source'),
-                        category       = a.get('category'),
+                        category       = cat,
                         published_at   = _parse_dt(a.get('publishedAt')),
                         image_url      = a.get('image'),
                         score          = a.get('_score', 0.0),
@@ -71,7 +76,7 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                         is_exploration = a.get('isExploration', False),
                         source_type    = a.get('_sourceType'),
                         weight         = a.get('_weight', 1.0),
-                        visible_at     = datetime.utcnow() + timedelta(minutes=(count // 3) * 10)
+                        visible_at     = datetime.utcnow() + timedelta(minutes=delay_min)
                     )
                     db.add(new_art)
                     existing_titles.append(t_lower)

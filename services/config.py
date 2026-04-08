@@ -5,7 +5,7 @@ services/config.py — All constants, source definitions, and mappings.
 # ──────────────────────────────────────────────
 # CATEGORIES
 # ──────────────────────────────────────────────
-CATEGORIES = ['us', 'world', 'technology', 'business', 'lifestyle', 'science']
+CATEGORIES = ['us', 'world', 'technology', 'business', 'lifestyle', 'science', 'entertainment']
 
 CATEGORY_ALIASES = {
     'finance':     'business',
@@ -109,6 +109,11 @@ RSS_SOURCES: list = [
     # Lifestyle
     {'name': 'BBC Lifestyle',  'url': 'http://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml',  'category': 'lifestyle',  'weight': 1.3},
     {'name': 'NYT Style',      'url': 'https://rss.nytimes.com/services/xml/rss/nyt/FashionandStyle.xml', 'category': 'lifestyle', 'weight': 1.2},
+    # Entertainment / Hollywood
+    {'name': 'Google News Movies', 'url': 'https://news.google.com/rss/search?q=Hollywood+movies+news&hl=en-US&gl=US&ceid=US:en', 'category': 'entertainment', 'weight': 1.1},
+    {'name': 'Google News Ent',    'url': 'https://news.google.com/rss/search?q=Entertainment+news&hl=en-US&gl=US&ceid=US:en',    'category': 'entertainment', 'weight': 1.1},
+    {'name': 'Variety',            'url': 'https://variety.com/feed/',                                                          'category': 'entertainment', 'weight': 1.3},
+    
     # Science
     {'name': 'NASA',           'url': 'https://www.nasa.gov/rss/dyn/breaking_news.rss',               'category': 'science',    'weight': 1.4},
     {'name': 'Science Daily',  'url': 'https://www.sciencedaily.com/rss/all.xml',                     'category': 'science',    'weight': 1.3},
