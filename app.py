@@ -36,46 +36,41 @@ async def _delayed_sync():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from services.fetchers import sync_all_categories
-    
-    # ── Background Startup Tasks ───────────────────────────
-    async def _boot_tasks():
-        await asyncio.sleep(2) # Give the server a moment to settle
+    # ── Immediate Boot ───────────────────────────────
+    # We move EVERYTHING into the background to prevent Render 502 Timeouts
+    async def _total_boot():
+        await asyncio.sleep(5) # Let the server tell Render "I am alive" first
         try:
-            # Initialize PostgreSQL Tables (Step 1: DB Readiness)
-            from services.models import init_db
-            init_db()
-            
-            # Deep Cleanup Task: Purge existing clones
+            from services.models   import init_db
+            from services.fetchers import sync_all_categories
             from scripts.cleanup_db import cleanup_duplicates
+            
+            init_db()
             cleanup_duplicates()
-            print("[BOOT TASKS] DB initialized and cleaned.")
+            
+            # Start scheduler AFTER DB is ready
+            scheduler.add_job(
+                sync_all_categories,
+                trigger='interval',
+                hours=1,
+                id='news_sync',
+                replace_existing=True,
+                max_instances=1,
+            )
+            scheduler.start()
+            print("[BOOT] Full systems online.")
         except Exception as e:
-            print(f"[BOOT TASKS ERROR] {e}")
+            print(f"[BOOT ERROR] {e}")
 
-    # Kick off background boot processes so the main loop starts immediately
-    asyncio.create_task(_boot_tasks())
-
-    # Schedule repeating cron (every 1 hour)
-    scheduler.add_job(
-        sync_all_categories,
-        trigger='interval',
-        hours=1,
-        id='news_sync',
-        replace_existing=True,
-        max_instances=1,          # Never overlap
-    )
-    scheduler.start()
-    print("[SCHEDULER] Cron started — sync every 1 hour.")
-
-    # [REMOVED] Initial sync on boot is removed to conserve API quota on Render free tier.
-    # Sync will now only happen once per hour via the scheduler or manual refresh cooldown.
-
-    yield  # ── Server running ──────────────────
+    asyncio.create_task(_total_boot())
+    
+    yield  # ── Return control to Render instantly ──
 
     # ── Shutdown ──────────────────────────────
-    scheduler.shutdown(wait=False)
-    print("[SHUTDOWN] Scheduler stopped.")
+    try:
+        scheduler.shutdown(wait=False)
+    except:
+        pass
 
 
 # ── App factory ───────────────────────────────
