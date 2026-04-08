@@ -17,8 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from routes.news   import router as news_router
-from routes.events import router as events_router
+# [DEFERRED] Route imports are now moved inside the lifespan to prevent startup crashes.
 
 
 # ── Scheduler ────────────────────────────────
@@ -38,18 +37,23 @@ async def _delayed_sync():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Immediate Boot ───────────────────────────────
-    # We move EVERYTHING into the background to prevent Render 502 Timeouts
     async def _total_boot():
-        await asyncio.sleep(5) # Let the server tell Render "I am alive" first
+        await asyncio.sleep(5) 
         try:
+            # We defer ALL heavy imports until after Render says "Service Deployed"
             from services.models   import init_db
             from services.fetchers import sync_all_categories
             from scripts.cleanup_db import cleanup_duplicates
+            from routes.news   import router as news_router
+            from routes.events import router as events_router
+            
+            # Register routes AFTER boot to ensure zero startup interference
+            app.include_router(news_router,   prefix="/api/news",  tags=["News Feed"])
+            app.include_router(events_router, prefix="/api/news", tags=["User Events"])
             
             init_db()
             cleanup_duplicates()
             
-            # Start scheduler AFTER DB is ready
             scheduler.add_job(
                 sync_all_categories,
                 trigger='interval',
@@ -59,13 +63,12 @@ async def lifespan(app: FastAPI):
                 max_instances=1,
             )
             scheduler.start()
-            print("[BOOT] Full systems online.")
+            print("[BOOT] Systems fully online.")
         except Exception as e:
             print(f"[BOOT ERROR] {e}")
 
     asyncio.create_task(_total_boot())
-    
-    yield  # ── Return control to Render instantly ──
+    yield
 
     # ── Shutdown ──────────────────────────────
     try:
@@ -93,8 +96,7 @@ app.add_middleware(
 )
 
 # ── Routers ───────────────────────────────────
-app.include_router(news_router,   prefix="/api/news",  tags=["News Feed"])
-app.include_router(events_router, prefix="/api/news", tags=["User Events"])
+# [DEFERRED] Routers are now registered in the lifespan.
 
 
 # ── Base routes ───────────────────────────────
