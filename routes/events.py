@@ -74,8 +74,8 @@ async def track_event(payload: EventPayload):
         duration=payload.duration or 0,
     )
 
-    # ONLY mark as seen if the user actually CLICKS or OPENS
-    if (payload.event or '').lower() in ['click', 'open']:
+    # Mark as seen if the user engages (read, open, click, save)
+    if (payload.event or '').lower() in ['read', 'open', 'click', 'save']:
         profile_store.mark_articles_seen(payload.userId, [payload.stableId])
 
     print(

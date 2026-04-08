@@ -69,8 +69,18 @@ def unlock_all():
     from services.models import SessionLocal, NewsArticle
     db = SessionLocal()
     try:
-        count = db.query(NewsArticle).update({"visible_at": datetime.utcnow()})
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        count = db.query(NewsArticle).update({"visible_at": now})
         db.commit()
         return {"success": True, "unlocked": count}
     finally:
         db.close()
+
+@app.get("/api/force-sync")
+async def force_sync():
+    from services.fetchers import sync_all_categories
+    try:
+        await sync_all_categories()
+        return {"success": True, "message": "Global sync complete! Now use /api/unlock-news to see them."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

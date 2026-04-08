@@ -53,8 +53,8 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                 else:
                     # 2. Fuzzy Title check (Catch clones before they enter the DB)
                     t_lower = title.lower()
-                    # Only check against the most recent 100 titles to keep it fast
-                    if any(difflib.SequenceMatcher(None, t_lower, t).ratio() > 0.85 for t in existing_titles[-100:]):
+                    # Only check against the most recent 200 titles to keep it fast
+                    if any(difflib.SequenceMatcher(None, t_lower, t).ratio() > 0.85 for t in existing_titles[-200:]):
                         continue # Skip this clone
                     
                     # Drip Feed (Per Category): 5 instantly, then 2 every 10 mins
