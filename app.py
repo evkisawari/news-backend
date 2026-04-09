@@ -25,14 +25,16 @@ async def lifespan(app: FastAPI):
         try:
             from services.models import init_db
             from services.fetchers import sync_all_categories
+            from services.database import sync_postgres_to_firebase
             # Initialize DB and run cleanup
             try:
                 init_db()
             except Exception as db_err:
                 print(f"[BOOT WARNING] PostgreSQL initialization failed (but engine will start anyway): {db_err}")
                 
-            # Heavy Refill: Every 30 mins (500+ articles session)
+            # Heavy Refill: Every 30 mins (Directly pushes to Firebase too)
             scheduler.add_job(sync_all_categories, 'interval', minutes=30, id='news_sync')
+            
             scheduler.start()
             print("[SERVER] News engine active.")
         except Exception as e:

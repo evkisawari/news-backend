@@ -28,21 +28,8 @@ def load_db() -> List[Dict[str, Any]]:
 def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str, Any]]:
     """Upsert articles into PostgreSQL and Firebase."""
     
-    # ── STEP 1: Sync to Firebase (High Priority for Flutter) ──
-    try:
-        if articles:
-            # 🚿 Normalization: Ensure all dates are ISO formats so Firestore sorting works
-            for a in articles:
-                raw_dt = a.get('publishedAt')
-                if raw_dt:
-                    dt = _parse_dt(raw_dt)
-                    if dt:
-                        a['publishedAt'] = dt.isoformat()
-            
-            from services.firebase_service import push_news_to_firebase
-            push_news_to_firebase(articles[:400])
-    except Exception as e:
-        print(f"[FIREBASE SYNC ERROR] {e}")
+    # [MODIFIED] We no longer push everything to Firebase here.
+    # Instead, we use sync_postgres_to_firebase() to only push "due" articles.
 
     db = SessionLocal()
     try:
@@ -94,7 +81,7 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                         is_exploration = a.get('isExploration', False),
                         source_type    = a.get('_sourceType'),
                         weight         = a.get('_weight', 1.0),
-                        visible_at     = datetime.utcnow() + timedelta(minutes=delay_min)
+                        visible_at     = datetime.utcnow() # INSTANT VISIBILITY
                     )
                     db.add(new_art)
                     existing_titles.append(t_lower)
@@ -106,8 +93,15 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
         if count > 0:
             db.commit()
             print(f"[DB] Saved {count} new articles to PostgreSQL.")
+            
+            # 🔥 DIRECT PUSH TO FIREBASE (No more Drip delays!)
+            try:
+                from services.firebase_service import push_news_to_firebase
+                push_news_to_firebase(articles[:400])
+            except Exception as fe:
+                print(f"[FIREBASE CRITICAL] Send failed: {fe}")
         else:
-            db.commit() # Flush updates to scores if any
+            db.commit() 
         
         # ── Step 8: Retention (Cleanup) ─────────────────
         # Delete articles older than X hours
@@ -124,6 +118,33 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
 
     return articles
 
+
+def sync_postgres_to_firebase():
+    """
+    Scans PostgreSQL for articles that are due (visible_at <= now)
+    and pushes them to Firebase so they appear in the app.
+    """
+    from services.firebase_service import push_news_to_firebase
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        # Find articles that should be visible but haven't been pushed yet
+        # (Technically Firestore manages its own state, but we'll fetch recent 'due' articles)
+        due = db.query(NewsArticle).filter(
+            NewsArticle.visible_at <= now
+        ).order_by(desc(NewsArticle.visible_at)).limit(150).all()
+        
+        if not due:
+            return
+
+        articles_to_push = [_to_dict(r) for r in due]
+        push_news_to_firebase(articles_to_push)
+        print(f"[DRIP SYNC] Pushed {len(articles_to_push)} scheduled articles to Firebase.")
+        
+    except Exception as e:
+        print(f"[DRIP SYNC ERROR] {e}")
+    finally:
+        db.close()
 
 def _to_dict(row: NewsArticle) -> Dict[str, Any]:
     """Convert SQLAlchemy row to engine-compatible dictionary."""
