@@ -71,17 +71,19 @@ async def get_news(
         
         # ── Step 13.1: Screen-Specific Filtering ──
         if screen.lower() == 'explore':
-            # 1. Recency: Only mix 1-3 days old news
-            three_days_ago = now_dt.replace(tzinfo=None) - timedelta(days=3)
+            # 1. Recency: Mix 7 days of news for variety in Explore
+            explore_window = now_dt.replace(tzinfo=None) - timedelta(days=7)
+            
             def _get_dt(a):
                 try: 
-                    return datetime.fromisoformat((a.get('publishedAt') or '').replace('Z', '+00:00')).replace(tzinfo=None)
+                    # Handle Z and ISO formats
+                    dt_str = (a.get('publishedAt') or '').replace('Z', '+00:00')
+                    return datetime.fromisoformat(dt_str).replace(tzinfo=None)
                 except: 
                     return datetime.min
             
-            # 2. Quality: Only "Highlight" news (implied high score)
-            # In Explore, we only want the absolute best bits of the last 3 days
-            db = [a for a in db if _get_dt(a) >= three_days_ago]
+            # 2. Filter pool based on window
+            db = [a for a in db if _get_dt(a) >= explore_window]
         
         if cat in ['home', 'all']:
             pool = db
