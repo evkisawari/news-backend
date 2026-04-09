@@ -39,15 +39,18 @@ def calculate_score(
     title_lower = str(article.get('title', '') or '').lower()
     cat = str(article.get('category', '') or '')
     
-    # 1. Freshness (Temporal decay)
+    # 1. Freshness (Strict Chronological Tiers)
     hours_old = _parse_pub_date(str(article.get('publishedAt', '') or ''))
     
-    # Massive boost for breaking news (last 4 hours)
-    if hours_old < 4:
-        recency = 1.0 - (hours_old / 24.0)
-        recency *= 2.0 # DOUBLE freshness weight for breaking news
+    if hours_old < 24:
+        # TODAY: Huge boost (1.5 to 2.0)
+        recency = 2.0 - (hours_old / 24.0) * 0.5
+    elif hours_old < 48:
+        # YESTERDAY: Standard score (0.5 to 1.0)
+        recency = 1.0 - ((hours_old - 24) / 24.0) * 0.5
     else:
-        recency = max(RECENCY_FLOOR, math.exp(-hours_old / RECENCY_HALF_LIFE))
+        # BEFORE YESTERDAY: Deep penalty (Below 0.3)
+        recency = max(0.1, 0.3 - ((hours_old - 48) / 168.0))
 
     # ── Progression Logic (Time vs Interest based on Depth) ──
     # Page 0: strongly favor recent

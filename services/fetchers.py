@@ -223,7 +223,30 @@ async def sync_all_categories():
         async with httpx.AsyncClient(headers=_HTTP_HEADERS, follow_redirects=True) as client:
             all_articles = []
             for cat in CATEGORIES:
-                all_articles.extend(await sync_category(cat, client))
+                print(f"[CRON] ── Syncing: {cat.upper()} ──")
+                results = []
+                
+                # Source 1: GNews (Best for Top Stories)
+                try:
+                    results += await fetch_gnews(cat, client)
+                except Exception as e:
+                    print(f"[GNEWS SKIP] {cat}: {e}")
+
+                # Source 2: NewsData.io (Reliable Fallback)
+                try:
+                    results += await fetch_newsdata(cat, client)
+                except Exception as e:
+                    print(f"[NEWSDATA SKIP] {cat}: {e}")
+                    
+                # Source 3: RSS (Deep fallback)
+                try:
+                    results += await fetch_rss_for_category(cat, client)
+                except Exception as e:
+                    print(f"[RSS SKIP] {cat}: {e}")
+                
+                if not results:
+                    continue
+                all_articles.extend(results)
             
             reddit = await fetch_reddit_worldnews(client)
             for r in reddit: 

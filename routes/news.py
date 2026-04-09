@@ -88,7 +88,7 @@ async def get_news(
         if cat in ['home', 'all']:
             pool = db
         else:
-            pool = [a for a in db if a.get('category') == cat]
+            pool = [a for a in db if str(a.get('category', '')).lower() == cat.lower()]
             
         # 3. Explore Highlight Filter: Filter the final pool if on Explore
         if screen.lower() == 'explore' and len(pool) > 50:
