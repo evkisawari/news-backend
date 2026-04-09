@@ -88,26 +88,28 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                 print(f"[DB] Item save error for stable_id {a.get('_stableId')}: {e}")
                 db.rollback() 
 
-        # ── Step 14: Staggered Drip Feed Scheduling ──
-        # Instead of all news appearing 'Now', we space them out to keep the app fresh.
-        stagger_interval_mins = 15
-        articles_per_block = 5
-        
-        # We only stagger NEW articles. Existing ones keep their visibility.
-        new_count = 0
+        # ── Step 14: Smart Staggered Drip Feed ──
         now_dt = datetime.now(timezone.utc)
+        cat_counts = {} # Track how many we've seen per category
+        new_count = 0
         
         for i, article in enumerate(new_ones):
-            # Calculate offset: every X articles, move the clock forward Y minutes
-            offset_blocks = new_count // articles_per_block
-            stagger_time = now_dt + timedelta(minutes=offset_blocks * stagger_interval_mins)
+            cat = article.category or 'all'
+            count_for_cat = cat_counts.get(cat, 0)
             
-            # Record visibility
-            article.visible_at = stagger_time.replace(tzinfo=None)
+            if count_for_cat < 10:
+                # First 10 per category are visible IMEDIATELY
+                article.visible_at = now_dt.replace(tzinfo=None)
+            else:
+                # Everything else is staggered (5 every 15 mins)
+                # Using overall count for staggering ensures global freshness
+                offset_blocks = (new_count - 10) // 5 
+                if offset_blocks < 0: offset_blocks = 0
+                stagger_time = now_dt + timedelta(minutes=offset_blocks * 15)
+                article.visible_at = stagger_time.replace(tzinfo=None)
+            
+            cat_counts[cat] = count_for_cat + 1
             new_count += 1
-            
-            if i < 5: # Log the first few for audit
-                print(f"[DRIP] Scheduled: {article.title[:40]}... for {article.visible_at}")
 
         db.add_all(new_ones)
         db.commit()
