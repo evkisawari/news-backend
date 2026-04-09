@@ -343,11 +343,10 @@ async def sync_category(category: str, client: httpx.AsyncClient) -> List[Dict]:
         gn = await fetch_gnews(category, client)
         articles.extend(gn)
 
-    # Step 4: RSS fallback — only when very sparse
-    if len(articles) < 10:
-        print(f"[SYNC] Falling back to RSS for {category}")
-        rss = await fetch_rss_for_category(category, client)
-        articles.extend(rss)
+    # Step 4: RSS (Always included for maximum freshness)
+    print(f"[SYNC] Adding RSS sources for {category}")
+    rss = await fetch_rss_for_category(category, client)
+    articles.extend(rss)
 
     # Deduplicate
     unique = deduplicate(articles)

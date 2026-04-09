@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# Core Routes (Must be at top for stability)
+# Core Routes
 from routes.news   import router as news_router
 from routes.events import router as events_router
 
@@ -19,19 +19,22 @@ scheduler = AsyncIOScheduler(timezone="UTC")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Background boot to prevent timeout
+    # Background boot
     async def _boot_engine():
-        await asyncio.sleep(2) 
+        await asyncio.sleep(5) 
         try:
             from services.models import init_db
-            try:
-                init_db()
-            except Exception as db_err:
-                print(f"[BOOT WARNING] DB Error: {db_err}")
+            from services.fetchers import sync_all_categories
+            init_db()
+            
+            # Start scheduler inside lifespan (Safe Mode)
+            if not scheduler.running:
+                scheduler.add_job(sync_all_categories, 'interval', minutes=60, id='news_sync')
+                scheduler.start()
                 
             print("[SERVER] News engine active.")
         except Exception as e:
-            print(f"[CRITICAL BOOT ERROR] {e}")
+            print(f"[BOOT ERROR] {e}")
 
     asyncio.create_task(_boot_engine())
     yield
@@ -57,11 +60,6 @@ async def get_status():
         "engine_interval": "60 minutes"
     }
 
-# ── Global Scheduler (Top Level) ────────────────
-from services.fetchers import sync_all_categories
-scheduler.add_job(sync_all_categories, 'interval', minutes=60, id='news_sync')
-scheduler.start()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -69,7 +67,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Registering routes immediately for Render health check stability
 app.include_router(news_router,   prefix="/api/news", tags=["News Feed"])
 app.include_router(events_router, prefix="/api/news", tags=["User Events"])
 
@@ -98,6 +95,6 @@ async def force_sync():
     from services.fetchers import sync_all_categories
     try:
         await sync_all_categories()
-        return {"success": True, "message": "Global sync complete! Now use /api/unlock-news to see them."}
+        return {"success": True, "message": "Manual sync complete!"}
     except Exception as e:
         return {"success": False, "error": str(e)}
