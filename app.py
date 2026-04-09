@@ -42,24 +42,6 @@ async def lifespan(app: FastAPI):
 # ── App Definition ─────────────────────────────
 app = FastAPI(title="Priority News Engine", version="2.0-python", lifespan=lifespan)
 
-# ── Status Endpoint ─────────────────────────────
-@app.get("/api/status")
-async def get_status():
-    from services.database import get_db_session
-    from services.models import NewsArticle
-    from sqlalchemy import func
-    
-    db = next(get_db_session())
-    total = db.query(func.count(NewsArticle.id)).scalar()
-    last = db.query(NewsArticle).order_by(NewsArticle.created_at.desc()).first()
-    
-    return {
-        "status": "online",
-        "total_articles_in_db": total,
-        "last_sync_attempt": last.created_at.isoformat() if last else "never",
-        "engine_interval": "60 minutes"
-    }
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
