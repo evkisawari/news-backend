@@ -42,16 +42,16 @@ def decode_cursor(cursor: str) -> int:
 # ── Feed endpoint ─────────────────────────────
 @router.get("")
 async def get_news(
-    type:   str            = Query('home'),
-    limit:  int            = Query(FEED_DEFAULT_LIMIT, ge=1, le=50),
+    category: str            = Query('all'),
+    limit:  int            = Query(FEED_DEFAULT_LIMIT, ge=1, le=120),
     cursor: Optional[str]  = Query(None),
     userId: Optional[str]  = Query(None),
     fresh:  bool           = Query(False),
     screen: str            = Query('home'), # 'home' or 'explore'
 ):
     # Resolve category alias
-    type_lower = type.lower()
-    cat = CATEGORY_ALIASES.get(type_lower, type_lower)
+    cat_lower = category.lower()
+    cat = CATEGORY_ALIASES.get(cat_lower, cat_lower)
     
     # [REMOVED] Sync is now strictly decoupled from web requests.
     # Flutter Pull-to-Refresh only fetches from our local DB.

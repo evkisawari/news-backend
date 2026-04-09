@@ -10,11 +10,18 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.dialects.postgresql import JSONB
 
 # Render/Alembic normalization: postgres -> postgresql
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/news_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://user:pass@localhost/news_db")
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 
-engine = create_engine(DATABASE_URL, connect_args={"sslmode": "require"})
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+    connect_args={"sslmode": "require"}
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
