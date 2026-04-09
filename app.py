@@ -14,24 +14,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from routes.news   import router as news_router
 from routes.events import router as events_router
 
-# ── Status Endpoint ─────────────────────────────
-@app.get("/api/status")
-async def get_status():
-    from services.database import get_db_session
-    from services.models import NewsArticle
-    from sqlalchemy import func
-    
-    db = next(get_db_session())
-    total = db.query(func.count(NewsArticle.id)).scalar()
-    last = db.query(NewsArticle).order_by(NewsArticle.created_at.desc()).first()
-    
-    return {
-        "status": "online",
-        "total_articles_in_db": total,
-        "last_sync_attempt": last.created_at.isoformat() if last else "never",
-        "engine_interval": "60 minutes"
-    }
-
 # ── Global Engine ───────────────────────────────
 scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -54,13 +36,31 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_boot_engine())
     yield
 
+# ── App Definition ─────────────────────────────
+app = FastAPI(title="Priority News Engine", version="2.0-python", lifespan=lifespan)
+
+# ── Status Endpoint ─────────────────────────────
+@app.get("/api/status")
+async def get_status():
+    from services.database import get_db_session
+    from services.models import NewsArticle
+    from sqlalchemy import func
+    
+    db = next(get_db_session())
+    total = db.query(func.count(NewsArticle.id)).scalar()
+    last = db.query(NewsArticle).order_by(NewsArticle.created_at.desc()).first()
+    
+    return {
+        "status": "online",
+        "total_articles_in_db": total,
+        "last_sync_attempt": last.created_at.isoformat() if last else "never",
+        "engine_interval": "60 minutes"
+    }
+
 # ── Global Scheduler (Top Level) ────────────────
 from services.fetchers import sync_all_categories
 scheduler.add_job(sync_all_categories, 'interval', minutes=60, id='news_sync')
 scheduler.start()
-
-# ── App Definition ─────────────────────────────
-app = FastAPI(title="Priority News Engine", version="2.0-python", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
