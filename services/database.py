@@ -80,19 +80,38 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                         ai_summary     = a.get('aiSummary'),
                         is_exploration = a.get('isExploration', False),
                         source_type    = a.get('_sourceType'),
-                        weight         = a.get('_weight', 1.0),
-                        visible_at     = datetime.utcnow() - timedelta(seconds=5) # INSTANT VISIBILITY
+                        weight         = a.get('_weight', 1.0)
                     )
-                    db.add(new_art)
+                    new_ones.append(new_art)
                     existing_titles.append(t_lower)
-                    count += 1
             except Exception as e:
                 print(f"[DB] Item save error for stable_id {a.get('_stableId')}: {e}")
                 db.rollback() 
 
-        if count > 0:
-            db.commit()
-            print(f"[DB] Saved {count} new articles to PostgreSQL.")
+        # ── Step 14: Staggered Drip Feed Scheduling ──
+        # Instead of all news appearing 'Now', we space them out to keep the app fresh.
+        stagger_interval_mins = 15
+        articles_per_block = 5
+        
+        # We only stagger NEW articles. Existing ones keep their visibility.
+        new_count = 0
+        now_dt = datetime.now(timezone.utc)
+        
+        for i, article in enumerate(new_ones):
+            # Calculate offset: every X articles, move the clock forward Y minutes
+            offset_blocks = new_count // articles_per_block
+            stagger_time = now_dt + timedelta(minutes=offset_blocks * stagger_interval_mins)
+            
+            # Record visibility
+            article.visible_at = stagger_time.replace(tzinfo=None)
+            new_count += 1
+            
+            if i < 5: # Log the first few for audit
+                print(f"[DRIP] Scheduled: {article.title[:40]}... for {article.visible_at}")
+
+        db.add_all(new_ones)
+        db.commit()
+        print(f"[DATABASE] ✅ Sync Complete. Added {new_count} new articles with staggered visibility.")
             
     finally:
         db.close()

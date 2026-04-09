@@ -57,17 +57,21 @@ async def get_news(
     # Flutter Pull-to-Refresh only fetches from our local DB.
     # Global sync only happens via the hourly scheduler in app.py.
 
+    start_time = time.time()
+    
     # ── Personalisation ──────────────
     profile = profile_store.get_profile(userId) if userId else None
     seen_articles = profile.get('seenArticles', []) if profile else []
 
-    # ── Load + filter ─────────────
+    # ── Load + Filter ──
     try:
-        db = load_db()
-        # Drip Feed Filter: Hide articles scheduled for the future
-        now_dt = datetime.now(timezone.utc)
-        now_iso = now_dt.isoformat()
-        db = [a for a in db if (a.get('visibleAt') or '') <= now_iso]
+        raw_db = load_db()
+        total_in_db = len(raw_db)
+        
+        # 1. Drip Feed Filter (Future Scheduling)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        db = [a for a in raw_db if (a.get('visibleAt') or '') <= now_iso]
+        drip_filtered = total_in_db - len(db)
         
         # ── Step 13.1: Screen-Specific Filtering ──
         if screen.lower() == 'explore':
@@ -108,6 +112,7 @@ async def get_news(
 
     # ── Filter seen articles (Strict Mode) ──
     unseen_pool = [a for a in pool if a.get('_stableId') not in seen_articles]
+    seen_filtered = len(pool) - len(unseen_pool)
     # No fallback! If user is caught up, they stay caught up until the next "Drip" or "Sync".
 
     # ── Pagination Offset ──
@@ -212,6 +217,15 @@ async def get_news(
             
             prio = 100 if (not has_desc or is_redundant) else (50 - i)
             enqueue(a, priority=prio)
+
+    # ── Step 15: PRO LOGGING & AUDIT ──
+    duration = time.time() - start_time
+    print(f"\n[AUDIT] 📱 FEED REQUEST")
+    print(f"       User:     {userId or 'Guest'}")
+    print(f"       Screen:   {screen}")
+    print(f"       Category: {cat}")
+    print(f"       📊 Stats:  TotalDB: {total_in_db} | DripFiltered: {drip_filtered} | SeenFiltered: {seen_filtered} | Final: {len(articles)}")
+    print(f"       ⏱️ Time:   {duration:.3f}s\n")
 
     return JSONResponse({
         'success':    True,
