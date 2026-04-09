@@ -5,20 +5,19 @@ services/config.py — All constants, source definitions, and mappings.
 # ──────────────────────────────────────────────
 # CATEGORIES
 # ──────────────────────────────────────────────
-CATEGORIES = ['all', 'us', 'world', 'technology', 'lifestyle', 'science', 'entertainment', 'sports']
+CATEGORIES = [
+    'national', 'business', 'sports', 'world', 'technology', 
+    'startup', 'entertainment', 'science', 'automobile', 'politics'
+]
 
 CATEGORY_ALIASES = {
-    'finance':     'business',
-    'general':     'us',
-    'sports':      'world',
-    'health':      'lifestyle',
-    'tech':        'technology',
-    'science':     'science',
-    'lifestyle':   'lifestyle',
-    'us':          'us',
-    'world':       'world',
-    'technology':  'technology',
-    'business':    'business',
+    'us':           'national',
+    'nation':       'national',
+    'breaking-news':'all',
+    'finance':      'business',
+    'tech':         'technology',
+    'auto':         'automobile',
+    'general':      'national',
 }
 
 # ──────────────────────────────────────────────
@@ -109,8 +108,10 @@ RSS_SOURCES: list = [
     {'name': 'The Verge',      'url': 'https://www.theverge.com/rss/index.xml',                        'category': 'technology', 'weight': 1.3},
     {'name': 'Wired',          'url': 'https://www.wired.com/feed/rss',                                'category': 'technology', 'weight': 1.3},
     # 🌟 PREMIUM NEW SOURCES (Inshorts & HackerNews)
-    {'name': 'Inshorts National', 'url': 'https://inshortsrss.vercel.app/news/topics/national', 'category': 'us',          'weight': 1.5},
+    {'name': 'Inshorts National', 'url': 'https://inshortsrss.vercel.app/news/topics/national', 'category': 'national',    'weight': 1.5},
     {'name': 'Inshorts Business', 'url': 'https://inshortsrss.vercel.app/news/topics/business', 'category': 'business',    'weight': 1.5},
+    {'name': 'Inshorts Sports',   'url': 'https://inshortsrss.vercel.app/news/topics/sports',   'category': 'sports',      'weight': 1.5},
+    {'name': 'Inshorts Startup',  'url': 'https://inshortsrss.vercel.app/news/topics/startup',  'category': 'startup',     'weight': 1.5},
     {'name': 'Inshorts Science',  'url': 'https://inshortsrss.vercel.app/news/topics/science',  'category': 'technology',  'weight': 1.5},
     {'name': 'Hacker News',      'url': 'https://hnrss.org/frontpage',                        'category': 'technology',  'weight': 1.4},
     {'name': 'Google News AI', 'url': 'https://news.google.com/rss/search?q=AI',                       'category': 'technology', 'weight': 1.2},

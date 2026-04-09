@@ -79,11 +79,10 @@ def unlock_all():
     finally:
         db.close()
 
+from fastapi import BackgroundTasks
+
 @app.get("/api/force-sync")
-async def force_sync():
+async def force_sync(background_tasks: BackgroundTasks):
     from services.fetchers import sync_all_categories
-    try:
-        await sync_all_categories()
-        return {"success": True, "message": "Manual sync complete!"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    background_tasks.add_task(sync_all_categories)
+    return {"success": True, "message": "Manual sync started in background. News will appear shortly!"}
