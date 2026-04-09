@@ -81,7 +81,7 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                         is_exploration = a.get('isExploration', False),
                         source_type    = a.get('_sourceType'),
                         weight         = a.get('_weight', 1.0),
-                        visible_at     = datetime.utcnow() # INSTANT VISIBILITY
+                        visible_at     = datetime.utcnow() - timedelta(seconds=5) # INSTANT VISIBILITY
                     )
                     db.add(new_art)
                     existing_titles.append(t_lower)
@@ -94,57 +94,10 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
             db.commit()
             print(f"[DB] Saved {count} new articles to PostgreSQL.")
             
-            # 🔥 DIRECT PUSH TO FIREBASE (No more Drip delays!)
-            try:
-                from services.firebase_service import push_news_to_firebase
-                push_news_to_firebase(articles[:400])
-            except Exception as fe:
-                print(f"[FIREBASE CRITICAL] Send failed: {fe}")
-        else:
-            db.commit() 
-        
-        # ── Step 8: Retention (Cleanup) ─────────────────
-        # Delete articles older than X hours
-        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) # naive for compare if db is naive
-        # Actually models use utcnow, let's stick to naive comparison or handle both
-        # SQLAlchemy handles naive datetimes for Postgres usually
-        from datetime import timedelta
-        limit_dt = datetime.utcnow() - timedelta(hours=ARTICLE_MAX_AGE_HRS)
-        db.query(NewsArticle).filter(NewsArticle.published_at < limit_dt).delete()
-        db.commit()
-
     finally:
         db.close()
 
     return articles
-
-
-def sync_postgres_to_firebase():
-    """
-    Scans PostgreSQL for articles that are due (visible_at <= now)
-    and pushes them to Firebase so they appear in the app.
-    """
-    from services.firebase_service import push_news_to_firebase
-    db = SessionLocal()
-    try:
-        now = datetime.utcnow()
-        # Find articles that should be visible but haven't been pushed yet
-        # (Technically Firestore manages its own state, but we'll fetch recent 'due' articles)
-        due = db.query(NewsArticle).filter(
-            NewsArticle.visible_at <= now
-        ).order_by(desc(NewsArticle.visible_at)).limit(150).all()
-        
-        if not due:
-            return
-
-        articles_to_push = [_to_dict(r) for r in due]
-        push_news_to_firebase(articles_to_push)
-        print(f"[DRIP SYNC] Pushed {len(articles_to_push)} scheduled articles to Firebase.")
-        
-    except Exception as e:
-        print(f"[DRIP SYNC ERROR] {e}")
-    finally:
-        db.close()
 
 def _to_dict(row: NewsArticle) -> Dict[str, Any]:
     """Convert SQLAlchemy row to engine-compatible dictionary."""

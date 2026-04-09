@@ -3,6 +3,7 @@ services/processor.py — Normalize, clean, deduplicate, and quality-filter arti
 """
 import re
 import hashlib
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse, urlencode, parse_qs
@@ -139,13 +140,26 @@ def normalize_article(raw: Dict[str, Any], source_type: str) -> Optional[Dict[st
     source = str(raw.get('source', 'Unknown'))
     weight = raw.get('_weight', SOURCE_WEIGHTS.get(source, 1.0))
 
+    # ── Date Normalization ──
+    from dateutil import parser
+    raw_date = raw.get('publishedAt') or raw.get('published_at') or ''
+    try:
+        if raw_date:
+            dt = parser.parse(str(raw_date))
+            # Force UTC and ISO format
+            published_at = dt.isoformat()
+        else:
+            published_at = datetime.now(timezone.utc).isoformat()
+    except Exception:
+        published_at = datetime.now(timezone.utc).isoformat()
+
     return {
         'title':       title,
         'description': description,
-        'url':         url,
+        'url': url,
         'source':      source,
         'category':    str(raw.get('category', '')),
-        'publishedAt': raw.get('publishedAt', ''),
+        'publishedAt': published_at,
         'image':       image,
         '_fp':         fp,
         '_stableId':   fp,
@@ -206,13 +220,23 @@ def deduplicate(articles: List[Dict]) -> List[Dict]:
 def quality_filter(articles: List[Dict]) -> List[Dict]:
     good = []
     for a in articles:
-        if not a.get('title') or len(a['title']) < 10:
+        # 1. Title test: must have a reasonably long headline
+        title = a.get('title', '').strip()
+        if not title or len(title) < 8:
             continue
-        if not a.get('description') or len(a['description']) < 30:
+            
+        # 2. URL test: must have a source link
+        url = a.get('url', '')
+        if not url or not str(url).startswith('http'):
             continue
+            
+        # 3. Image test: if invalid, just null it (Don't drop the article!)
         if not is_valid_image(a.get('image', '')):
-            continue
-        if not a.get('url') or not str(a['url']).startswith('http'):
-            continue
+            a['image'] = None
+            
+        # 4. Description cleanup: Ensure it's not None
+        if not a.get('description'):
+            a['description'] = "" # Allow empty for now, AI summaries will fill later
+            
         good.append(a)
     return good

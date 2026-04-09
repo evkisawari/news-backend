@@ -29,7 +29,14 @@ async def lifespan(app: FastAPI):
             
             # Start scheduler inside lifespan (Safe Mode)
             if not scheduler.running:
-                scheduler.add_job(sync_all_categories, 'interval', minutes=60, id='news_sync')
+                from datetime import datetime
+                scheduler.add_job(
+                    sync_all_categories, 
+                    'interval', 
+                    minutes=60, 
+                    id='news_sync',
+                    next_run_time=datetime.now(timezone.utc)
+                )
                 scheduler.start()
                 
             print("[SERVER] News engine active.")
