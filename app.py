@@ -14,6 +14,24 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from routes.news   import router as news_router
 from routes.events import router as events_router
 
+# ── Status Endpoint ─────────────────────────────
+@app.get("/api/status")
+async def get_status():
+    from services.database import get_db_session
+    from services.models import NewsArticle
+    from sqlalchemy import func
+    
+    db = next(get_db_session())
+    total = db.query(func.count(NewsArticle.id)).scalar()
+    last = db.query(NewsArticle).order_by(NewsArticle.created_at.desc()).first()
+    
+    return {
+        "status": "online",
+        "total_articles_in_db": total,
+        "last_sync_attempt": last.created_at.isoformat() if last else "never",
+        "engine_interval": "60 minutes"
+    }
+
 # ── Global Engine ───────────────────────────────
 scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -21,31 +39,25 @@ scheduler = AsyncIOScheduler(timezone="UTC")
 async def lifespan(app: FastAPI):
     # Background boot to prevent timeout
     async def _boot_engine():
-        await asyncio.sleep(3) 
+        await asyncio.sleep(2) 
         try:
             from services.models import init_db
-            from services.fetchers import sync_all_categories
-            from services.database import sync_postgres_to_firebase
-            # Initialize DB and run cleanup
             try:
                 init_db()
             except Exception as db_err:
-                print(f"[BOOT WARNING] PostgreSQL initialization failed (but engine will start anyway): {db_err}")
+                print(f"[BOOT WARNING] DB Error: {db_err}")
                 
-            # Heavy Refill: Every 30 mins (Directly pushes to Firebase too)
-            scheduler.add_job(sync_all_categories, 'interval', minutes=30, id='news_sync')
-            
-            scheduler.start()
             print("[SERVER] News engine active.")
         except Exception as e:
-            print(f"[BOOT ERROR] {e}")
+            print(f"[CRITICAL BOOT ERROR] {e}")
 
     asyncio.create_task(_boot_engine())
     yield
-    try:
-        scheduler.shutdown(wait=False)
-    except:
-        pass
+
+# ── Global Scheduler (Top Level) ────────────────
+from services.fetchers import sync_all_categories
+scheduler.add_job(sync_all_categories, 'interval', minutes=60, id='news_sync')
+scheduler.start()
 
 # ── App Definition ─────────────────────────────
 app = FastAPI(title="Priority News Engine", version="2.0-python", lifespan=lifespan)
