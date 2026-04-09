@@ -53,6 +53,7 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
 
         # Track counts per category for the Drip Feed
         cat_counts = {c: 0 for c in CATEGORIES}
+        count = 0
 
         for a in articles:
             try:
@@ -100,9 +101,13 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
                     count += 1
             except Exception as e:
                 print(f"[DB] Item save error for stable_id {a.get('_stableId')}: {e}")
-                db.rollback() # Rollback the individual item failure to keep session clean
+                db.rollback() 
 
-        db.commit()
+        if count > 0:
+            db.commit()
+            print(f"[DB] Saved {count} new articles to PostgreSQL.")
+        else:
+            db.commit() # Flush updates to scores if any
         
         # ── Step 8: Retention (Cleanup) ─────────────────
         # Delete articles older than X hours

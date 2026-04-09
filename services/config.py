@@ -5,7 +5,7 @@ services/config.py — All constants, source definitions, and mappings.
 # ──────────────────────────────────────────────
 # CATEGORIES
 # ──────────────────────────────────────────────
-CATEGORIES = ['us', 'world', 'technology', 'lifestyle', 'science', 'entertainment']
+CATEGORIES = ['all', 'us', 'world', 'technology', 'lifestyle', 'science', 'entertainment', 'sports']
 
 CATEGORY_ALIASES = {
     'finance':     'business',
@@ -31,6 +31,9 @@ NEWSDATA_CATEGORIES = {
     'business':   {'category': 'business',    'country': ''},
     'lifestyle':  {'category': 'lifestyle',   'country': ''},
     'science':    {'category': 'science',     'country': ''},
+    'entertainment': {'category': 'entertainment', 'country': ''},
+    'sports':     {'category': 'sports',      'country': ''},
+    'all':        {'category': 'top',         'country': ''},
 }
 
 GNEWS_TOPICS = {
@@ -40,6 +43,9 @@ GNEWS_TOPICS = {
     'business':   'business',
     'lifestyle':  'entertainment',
     'science':    'science',
+    'entertainment': 'entertainment',
+    'sports':     'sports',
+    'all':        'breaking-news',
 }
 
 # ──────────────────────────────────────────────
@@ -90,21 +96,26 @@ RSS_SOURCES: list = [
     {'name': 'CNN',            'url': 'http://rss.cnn.com/rss/edition.rss',                            'category': 'world',      'weight': 1.2},
     {'name': 'Google News India', 'url': 'https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en',      'category': 'world',      'weight': 1.1},
     {'name': 'Google News Global', 'url': 'https://news.google.com/rss/search?q=USA+world+news&hl=en-US&gl=US&ceid=US:en', 'category': 'world', 'weight': 1.0},
+    {'name': 'Middle East News',   'url': 'https://rss.app/feeds/DWxdxmyhM766QPLs.xml',                  'category': 'world',      'weight': 1.4},
+    {'name': 'NYT World',          'url': 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',        'category': 'world',      'weight': 1.4},
     # US
     {'name': 'NYT',            'url': 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',     'category': 'us',         'weight': 1.5},
     {'name': 'Fox News',       'url': 'https://moxie.foxnews.com/google-publisher/latest.xml',         'category': 'us',         'weight': 1.2},
     {'name': 'Google News US', 'url': 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en',        'category': 'us',         'weight': 1.0},
     {'name': 'Google News Politics', 'url': 'https://news.google.com/rss/search?q=US+politics&hl=en-US&gl=US&ceid=US:en', 'category': 'us', 'weight': 1.1},
+    {'name': 'NYT Politics',   'url': 'https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml' ,      'category': 'us',         'weight': 1.4},
     # Technology
     {'name': 'TechCrunch',     'url': 'https://techcrunch.com/feed/',                                  'category': 'technology', 'weight': 1.4},
     {'name': 'The Verge',      'url': 'https://www.theverge.com/rss/index.xml',                        'category': 'technology', 'weight': 1.3},
     {'name': 'Wired',          'url': 'https://www.wired.com/feed/rss',                                'category': 'technology', 'weight': 1.3},
     {'name': 'Google News AI', 'url': 'https://news.google.com/rss/search?q=AI',                       'category': 'technology', 'weight': 1.2},
     {'name': 'Google News Tech', 'url': 'https://news.google.com/rss/search?q=US+technology&hl=en-US&gl=US&ceid=US:en', 'category': 'technology', 'weight': 1.1},
+    {'name': 'NYT Technology', 'url': 'https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml' ,    'category': 'technology', 'weight': 1.3},
     # Business
     {'name': 'CNBC',           'url': 'https://www.cnbc.com/id/100003114/device/rss/rss.html',         'category': 'business',   'weight': 1.4},
     {'name': 'Google News Biz', 'url': 'https://news.google.com/rss/search?q=business+news&hl=en-US&gl=US&ceid=US:en', 'category': 'business', 'weight': 1.1},
     {'name': 'Google News Finance', 'url': 'https://news.google.com/rss/search?q=finance+stock+market&hl=en-US&gl=US&ceid=US:en', 'category': 'business', 'weight': 1.1},
+    {'name': 'NYT Business',    'url': 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml',      'category': 'business',   'weight': 1.3},
     # Lifestyle
     {'name': 'BBC Lifestyle',  'url': 'http://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml',  'category': 'lifestyle',  'weight': 1.3},
     {'name': 'NYT Style',      'url': 'https://rss.nytimes.com/services/xml/rss/nyt/FashionandStyle.xml', 'category': 'lifestyle', 'weight': 1.2},
@@ -127,6 +138,12 @@ RSS_SOURCES: list = [
     {'name': 'NASA',           'url': 'https://www.nasa.gov/rss/dyn/breaking_news.rss',               'category': 'science',    'weight': 1.4},
     {'name': 'Science Daily',  'url': 'https://www.sciencedaily.com/rss/all.xml',                     'category': 'science',    'weight': 1.3},
     {'name': 'New Scientist',  'url': 'https://www.newscientist.com/feed/home/?cmpid=RSS|NSNS',       'category': 'science',    'weight': 1.2},
+    {'name': 'NYT Science',    'url': 'https://rss.nytimes.com/services/xml/rss/nyt/Science.xml',      'category': 'science',    'weight': 1.3},
+    
+    # All / General / Opinion
+    {'name': 'NYT Opinion',    'url': 'https://rss.nytimes.com/services/xml/rss/nyt/Opinion.xml',      'category': 'all',        'weight': 1.2},
+    {'name': 'NYT Most Viewed','url': 'https://rss.nytimes.com/services/xml/rss/nyt/MostViewed.xml',   'category': 'all',        'weight': 1.1},
+    {'name': 'Google News Top','url': 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en',        'category': 'all',        'weight': 1.0},
 ]
 
 # ──────────────────────────────────────────────

@@ -38,6 +38,24 @@ _HTTP_HEADERS = {
     'Accept': 'application/json',
 }
 
+# ── API Key Selection (Quota Optimization) ──
+def _get_api_key(service: str, category: str) -> str:
+    """
+    Assigns categories to specific keys to balance quota usage.
+    Primary Categories (US, World, Tech, Biz) -> Key 1
+    Supplemental Categories (Life, Science, Ent) -> Key 2
+    """
+    key1_cats = ['us', 'world', 'technology', 'business']
+    
+    if service == 'newsdata':
+        suffix = '1' if category in key1_cats else '2'
+        return os.getenv(f'NEWSDATA_KEY_{suffix}') or os.getenv('NEWSDATA_KEY', '')
+    
+    if service == 'gnews':
+        suffix = '1' if category in key1_cats else '2'
+        return os.getenv(f'GNEWS_API_KEY_{suffix}') or os.getenv('GNEWS_API_KEY', '')
+    
+    return ""
 
 # ══════════════════════════════════════════════
 # STEP 2: NEWSDATA.IO (PRIMARY)
@@ -45,7 +63,7 @@ _HTTP_HEADERS = {
 async def fetch_newsdata(category: str, client: httpx.AsyncClient) -> List[Dict]:
     mapping = NEWSDATA_CATEGORIES.get(category, {'category': 'top', 'country': 'us'})
     params: Dict[str, str] = {
-        'apikey':         os.getenv('NEWSDATA_KEY', ''),
+        'apikey':         _get_api_key('newsdata', category),
         'language':       'en',
         'category':       mapping['category'],
         'image':          '1',         # Only articles with images
@@ -113,7 +131,7 @@ async def fetch_newsdata(category: str, client: httpx.AsyncClient) -> List[Dict]
 async def fetch_gnews(category: str, client: httpx.AsyncClient) -> List[Dict]:
     topic = GNEWS_TOPICS.get(category, 'breaking-news')
     params = {
-        'apikey': os.getenv('GNEWS_API_KEY', ''),
+        'apikey': _get_api_key('gnews', category),
         'lang':   'en',
         'topic':  topic,
         'max':    '5',    # Keep low to conserve 100/day free-tier quota

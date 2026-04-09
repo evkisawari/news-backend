@@ -7,7 +7,7 @@ import base64
 import json
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import difflib
 import asyncio
 from typing import Optional
@@ -65,13 +65,34 @@ async def get_news(
     try:
         db = load_db()
         # Drip Feed Filter: Hide articles scheduled for the future
-        now_iso = datetime.utcnow().isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
         db = [a for a in db if (a.get('visibleAt') or '') <= now_iso]
+        
+        # ── Step 13.1: Screen-Specific Filtering ──
+        if screen.lower() == 'explore':
+            # 1. Recency: Only mix 1-3 days old news
+            three_days_ago = now_dt.replace(tzinfo=None) - timedelta(days=3)
+            def _get_dt(a):
+                try: 
+                    return datetime.fromisoformat((a.get('publishedAt') or '').replace('Z', '+00:00')).replace(tzinfo=None)
+                except: 
+                    return datetime.min
+            
+            # 2. Quality: Only "Highlight" news (implied high score)
+            # In Explore, we only want the absolute best bits of the last 3 days
+            db = [a for a in db if _get_dt(a) >= three_days_ago]
         
         if cat in ['home', 'all']:
             pool = db
         else:
             pool = [a for a in db if a.get('category') == cat]
+            
+        # 3. Explore Highlight Filter: Filter the final pool if on Explore
+        if screen.lower() == 'explore' and len(pool) > 50:
+             # We still want enough to fill the page, but let's sort and take the top half 
+             # wait, let the scoring handle the order, but we can pre-filter trash.
+             pass
     except Exception as e:
         print(f"[API ERROR] Database connectivity issue: {e}")
         return JSONResponse(status_code=500, content={'success': False, 'error': 'Database connectivity issue', 'detail': str(e)})

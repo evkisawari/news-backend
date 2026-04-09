@@ -26,10 +26,13 @@ async def lifespan(app: FastAPI):
             from services.models import init_db
             from services.fetchers import sync_all_categories
             # Initialize DB and run cleanup
-            init_db()
-            
-            # Heavy Refill: Every 60 mins (500+ articles session)
-            scheduler.add_job(sync_all_categories, 'interval', minutes=60, id='news_sync')
+            try:
+                init_db()
+            except Exception as db_err:
+                print(f"[BOOT WARNING] PostgreSQL initialization failed (but engine will start anyway): {db_err}")
+                
+            # Heavy Refill: Every 30 mins (500+ articles session)
+            scheduler.add_job(sync_all_categories, 'interval', minutes=30, id='news_sync')
             scheduler.start()
             print("[SERVER] News engine active.")
         except Exception as e:

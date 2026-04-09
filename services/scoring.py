@@ -105,11 +105,30 @@ def calculate_score(
     if any(k in title_lower for k in WAR_KEYWORDS):
         war_boost = 0.15
 
+    # ── 6. Source Ranking (3-Tier Priority) ─────────────────
+    source_type = article.get('source_type', 'rss')
+    source_name = str(article.get('source', '') or '').lower()
+    
+    tier_boost = 0.0
+    if source_type in ['newsdata', 'gnews']:
+        tier_boost = 0.25 # Tier 1: Primary APIs
+    elif any(n in source_name for n in ['dainik bhaskar', 'new york times', 'nyt', 'al jazeera']):
+        tier_boost = 0.15 # Tier 2: Premium Trusted Sources
+    
+    # ── 7. Home Feed Focus (Politics, World, War, Sports) ──
+    # If a category is part of the 'Hard News' core, it gets extra visibility on Home.
+    # Note: 'Hard News' includes us, world, sports and politics (mapped to us).
+    cat_focus_boost = 0.0
+    if cat in ['us', 'world', 'business', 'sports']:
+        cat_focus_boost = 0.10
+    
     score = (
         weight_recency  * recency       +
         SCORE_SOURCE   * source_score  +
         weight_interest * final_interest +
         SCORE_KEYWORD  * keyword_score  +
-        war_boost
+        war_boost +
+        tier_boost +
+        cat_focus_boost
     )
     return round(min(1.0, max(0.0, score)), 4)
