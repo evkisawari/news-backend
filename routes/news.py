@@ -117,17 +117,14 @@ async def get_news(
     unseen_pool = [{**a, '_score': calculate_score(a, profile, page_depth) + noise} for a in unseen_pool]
     unseen_pool.sort(key=lambda x: x.get('_score', 0), reverse=True)
 
-    # ── Fuzzy Deduplication (Clones Wipeout) ──
-    # If two articles have > 85% similar titles, we drop the lower-quality copy
+    # ── Fast Deduplication ──
     safe_pool = []
-    seen_titles = []
+    seen_ids = set()
     for a in unseen_pool:
-        title = a.get('title', '').lower()
-        if not any(difflib.SequenceMatcher(None, title, t).ratio() > 0.85 for t in seen_titles[:60]):
+        sid = a.get('_stableId') or a.get('url')
+        if sid not in seen_ids:
+            seen_ids.add(sid)
             safe_pool.append(a)
-            seen_titles.append(title)
-        else:
-            pass # Caught a clone! Skip it.
     unseen_pool = safe_pool
 
     # ── Screen Partitioning ──
