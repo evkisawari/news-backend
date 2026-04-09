@@ -63,17 +63,15 @@ async def get_news(
     profile = profile_store.get_profile(userId) if userId else None
     seen_articles = profile.get('seenArticles', []) if profile else []
 
-    # ── Load + Filter ──
+    # ── Load + Filter (DATABASE LEVEL) ──
     try:
-        raw_db = load_db()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        raw_db = load_db(category=cat, now_iso=now_iso) 
         total_in_db = len(raw_db)
         
-        # 1. Drip Feed Filter (Future Scheduling)
-        now_iso = datetime.now(timezone.utc).isoformat()
-        db = [a for a in raw_db if (a.get('visibleAt') or '') <= now_iso]
-        drip_filtered = total_in_db - len(db)
-        
-        # ── Step 13.1: Screen-Specific Filtering ──
+        # We now have exactly what we need for this category/time
+        db = raw_db
+        drip_filtered = 0 # Handled by SQL now
         if screen.lower() == 'explore':
             # 1. Recency: Mix 7 days of news for variety in Explore
             explore_window = now_dt.replace(tzinfo=None) - timedelta(days=7)

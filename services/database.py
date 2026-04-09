@@ -11,12 +11,22 @@ from services.models import SessionLocal, NewsArticle
 from services.config import ARTICLE_MAX_AGE_HRS, DB_MAX_PER_CATEGORY, CATEGORIES
 
 
-def load_db() -> List[Dict[str, Any]]:
+def load_db(category: str = None, now_iso: str = None) -> List[Dict[str, Any]]:
     """Fetch all articles from PostgreSQL (Step 12: Feed generation)."""
     db = SessionLocal()
     try:
-        # Fetch all articles directly, maintaining pagination/limit logic elsewhere
-        rows = db.query(NewsArticle).order_by(desc(NewsArticle.score)).all()
+        query = db.query(NewsArticle)
+        
+        # 1. Visibility Filter (Drip Feed)
+        if now_iso:
+            query = query.filter(NewsArticle.visible_at <= now_iso)
+            
+        # 2. Category Filter
+        if category and category.lower() not in ['all', 'home']:
+            query = query.filter(NewsArticle.category == category.lower())
+            
+        # 3. Freshness & Limit
+        rows = query.order_by(desc(NewsArticle.published_at)).limit(200).all()
         return [_to_dict(r) for r in rows]
     except Exception as e:
         print(f"[DB] Load error: {e}")
