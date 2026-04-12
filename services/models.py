@@ -8,6 +8,9 @@ from typing import Optional
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, JSON, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.dialects.postgresql import JSONB
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Render/Alembic normalization: postgres -> postgresql
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://user:pass@localhost/news_db")

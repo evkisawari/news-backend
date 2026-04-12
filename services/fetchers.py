@@ -29,92 +29,109 @@ _HTTP_HEADERS = {
     'Accept': 'application/json',
 }
 
-def _get_api_key(service: str, category: str) -> str:
-    key1_cats = ['us', 'world', 'technology', 'business']
-    if service == 'newsdata':
-        suffix = '1' if category in key1_cats else '2'
-        return os.getenv(f'NEWSDATA_KEY_{suffix}') or os.getenv('NEWSDATA_KEY', '')
-    if service == 'gnews':
-        suffix = '1' if category in key1_cats else '2'
-        return os.getenv(f'GNEWS_API_KEY_{suffix}') or os.getenv('GNEWS_API_KEY', '')
-    return ""
+# Replaced by in-place rotation in fetchers
 
 # ══════════════════════════════════════════════
 # NEWSDATA.IO
 # ══════════════════════════════════════════════
 async def fetch_newsdata(category: str, client: httpx.AsyncClient) -> List[Dict]:
     mapping = NEWSDATA_CATEGORIES.get(category, {'category': 'top', 'country': 'us'})
-    params = {
-        'apikey':         _get_api_key('newsdata', category),
-        'language':       'en',
-        'category':       mapping['category'],
-        'image':          '1',
-        'prioritydomain': 'top',
-        'size':           '10',
-    }
-    country = mapping.get('country', '')
-    if country: params['country'] = country
+    
+    # Rotation pool
+    keys = [os.getenv('NEWSDATA_KEY_1'), os.getenv('NEWSDATA_KEY_2')]
+    keys = [k for k in keys if k]
+    if category not in ['us', 'world', 'technology', 'business']:
+        keys.reverse() # Prefer key 2 for lifestyle/science/etc
 
-    try:
-        resp = await client.get('https://newsdata.io/api/1/news', params=params, timeout=14.0)
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get('status') != 'success': return []
+    for apikey in keys:
+        params = {
+            'apikey':         apikey,
+            'language':       'en',
+            'category':       mapping['category'],
+            'image':          '1',
+            'prioritydomain': 'top',
+            'size':           '15',
+        }
+        country = mapping.get('country', '')
+        if country: params['country'] = country
 
-        articles = []
-        for item in data.get('results', []):
-            if not isinstance(item, dict): continue
-            normalized = normalize_article({
-                'title':   item.get('title'),
-                'url':     item.get('link'),
-                'image':   item.get('image_url'),
-                'description': item.get('description') or item.get('content'),
-                'source':  item.get('source_id') or item.get('source_name'),
-                'publishedAt': item.get('pubDate'),
-                'category': category
-            }, 'newsdata')
-            if normalized: articles.append(normalized)
-        return articles
-    except Exception as e:
-        print(f"[NEWSDATA ERROR] {category}: {e}")
-        return []
+        try:
+            resp = await client.get('https://newsdata.io/api/1/news', params=params, timeout=14.0)
+            if resp.status_code == 429: 
+                print(f"[NEWSDATA] Key exhausted, trying next...")
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get('status') != 'success': 
+                if 'limit' in str(data.get('results')): continue
+                return []
+
+            articles = []
+            for item in data.get('results', []):
+                if not isinstance(item, dict): continue
+                normalized = normalize_article({
+                    'title':   item.get('title'),
+                    'url':     item.get('link'),
+                    'image':   item.get('image_url'),
+                    'description': item.get('description') or item.get('content'),
+                    'source':  item.get('source_id') or item.get('source_name'),
+                    'publishedAt': item.get('pubDate'),
+                    'category': category
+                }, 'newsdata')
+                if normalized: articles.append(normalized)
+            return articles
+        except Exception as e:
+            print(f"[NEWSDATA ERROR] {category}: {e}")
+            continue
+    return []
 
 # ══════════════════════════════════════════════
 # GNEWS
 # ══════════════════════════════════════════════
 async def fetch_gnews(category: str, client: httpx.AsyncClient) -> List[Dict]:
     topic = GNEWS_TOPICS.get(category, 'world')
-    params = {
-        'apikey': _get_api_key('gnews', category),
-        'lang':   'en',
-        'topic':  topic,
-        'max':    '10',
-    }
-    try:
-        resp = await client.get('https://gnews.io/api/v4/top-headlines', params=params, timeout=12.0)
-        resp.raise_for_status()
-        data = resp.json()
-        
-        articles = []
-        for item in data.get('articles', []):
-            if not isinstance(item, dict): continue
-            source_data = item.get('source')
-            source_name = source_data.get('name') if isinstance(source_data, dict) else 'GNews'
+    
+    keys = [os.getenv('GNEWS_API_KEY_1'), os.getenv('GNEWS_API_KEY_2')]
+    keys = [k for k in keys if k]
+    if category not in ['us', 'world', 'technology', 'business']:
+        keys.reverse()
+
+    for apikey in keys:
+        params = {
+            'apikey': apikey,
+            'lang':   'en',
+            'topic':  topic,
+            'max':    '10',
+        }
+        try:
+            resp = await client.get('https://gnews.io/api/v4/top-headlines', params=params, timeout=12.0)
+            if resp.status_code in [403, 429]:
+                print(f"[GNEWS] Key exhausted ({resp.status_code}), trying next...")
+                continue
+            resp.raise_for_status()
+            data = resp.json()
             
-            normalized = normalize_article({
-                'title':   item.get('title'),
-                'url':     item.get('url'),
-                'image':   item.get('image'),
-                'description': item.get('description'),
-                'source':  source_name,
-                'publishedAt': item.get('publishedAt'),
-                'category': category
-            }, 'gnews')
-            if normalized: articles.append(normalized)
-        return articles
-    except Exception as e:
-        print(f"[GNEWS ERROR] {category}: {e}")
-        return []
+            articles = []
+            for item in data.get('articles', []):
+                if not isinstance(item, dict): continue
+                source_data = item.get('source')
+                source_name = source_data.get('name') if isinstance(source_data, dict) else 'GNews'
+                
+                normalized = normalize_article({
+                    'title':   item.get('title'),
+                    'url':     item.get('url'),
+                    'image':   item.get('image'),
+                    'description': item.get('description'),
+                    'source':  source_name,
+                    'publishedAt': item.get('publishedAt'),
+                    'category': category
+                }, 'gnews')
+                if normalized: articles.append(normalized)
+            return articles
+        except Exception as e:
+            print(f"[GNEWS ERROR] {category}: {e}")
+            continue
+    return []
 
 # ══════════════════════════════════════════════
 # RSS Fallback

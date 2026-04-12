@@ -26,7 +26,8 @@ def load_db(category: str = None, now_iso: str = None) -> List[Dict[str, Any]]:
             query = query.filter(NewsArticle.category == category.lower())
             
         # 3. Freshness & Limit
-        rows = query.order_by(desc(NewsArticle.published_at)).limit(200).all()
+        from sqlalchemy import nulls_last
+        rows = query.order_by(nulls_last(desc(NewsArticle.published_at))).limit(200).all()
         return [_to_dict(r) for r in rows]
     except Exception as e:
         print(f"[DB] Load error: {e}")

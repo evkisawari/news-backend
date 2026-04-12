@@ -83,7 +83,9 @@ async def get_news(
             def _get_dt(a):
                 try: 
                     # Handle Z and ISO formats
-                    dt_str = (a.get('publishedAt') or '').replace('Z', '+00:00')
+                    # Fallback to visibleAt if publishedAt is empty/missing
+                    dt_str = (a.get('publishedAt') or a.get('visibleAt') or '').replace('Z', '+00:00')
+                    if not dt_str: return datetime.min
                     return datetime.fromisoformat(dt_str).replace(tzinfo=None)
                 except: 
                     return datetime.min
