@@ -51,6 +51,7 @@ def save_db(articles: List[Dict[str, Any]], sort: bool = True) -> List[Dict[str,
         # Track counts per category for the Drip Feed
         cat_counts = {c: 0 for c in CATEGORIES}
         count = 0
+        new_ones = []
 
         for a in articles:
             try:

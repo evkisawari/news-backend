@@ -8,7 +8,7 @@ from html.parser import HTMLParser
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse, urlencode, parse_qs
 
-from services.config import SOURCE_WEIGHTS
+from services.config import SOURCE_WEIGHTS, WAR_KEYWORDS, CATEGORY_ALIASES
 
 _GARBAGE_DOMAINS = {
     'guim.co.uk', 'cnn.it', 'bit.ly', 'tinyurl.com',
@@ -143,22 +143,35 @@ def normalize_article(raw: Dict[str, Any], source_type: str) -> Optional[Dict[st
     # ── Date Normalization ──
     from dateutil import parser
     raw_date = raw.get('publishedAt') or raw.get('published_at') or ''
+    published_at = ""
     try:
         if raw_date:
             dt = parser.parse(str(raw_date))
-            # Force UTC and ISO format
             published_at = dt.isoformat()
         else:
             published_at = datetime.now(timezone.utc).isoformat()
     except Exception:
         published_at = datetime.now(timezone.utc).isoformat()
 
+    # ── Category Normalization & Re-classification ──
+    cat = str(raw.get('category', '')).lower().strip()
+    cat = CATEGORY_ALIASES.get(cat, cat)
+    
+    # Keyword-based override for 'war'
+    title_lower = title.lower()
+    if any(k in title_lower for k in WAR_KEYWORDS):
+        cat = 'war'
+    elif cat not in ['politics', 'entertainment', 'lifestyle', 'science', 'technology', 'business', 'world']:
+        # If it's something unknown, default to 'world' or keep original if it's 'all'
+        if cat not in ['all', 'home']:
+            cat = 'world'
+
     return {
         'title':       title,
         'description': description,
         'url': url,
         'source':      source,
-        'category':    str(raw.get('category', '')),
+        'category':    cat,
         'publishedAt': published_at,
         'image':       image,
         '_fp':         fp,

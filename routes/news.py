@@ -49,9 +49,12 @@ async def get_news(
     fresh:  bool           = Query(False),
     screen: str            = Query('home'), # 'home' or 'explore'
 ):
-    # Resolve category alias
-    cat_lower = category.lower()
-    cat = CATEGORY_ALIASES.get(cat_lower, cat_lower)
+    # Handle Category Aliasing
+    normalized_cat = category.lower().strip()
+    cat = CATEGORY_ALIASES.get(normalized_cat, normalized_cat)
+    
+    # If category is 'war', we might want to fetch 'world' and filter by keywords 
+    # OR if we have articles specifically tagged 'war', it works directly.
     
     # [REMOVED] Sync is now strictly decoupled from web requests.
     # Flutter Pull-to-Refresh only fetches from our local DB.
@@ -65,7 +68,8 @@ async def get_news(
 
     # ── Load + Filter (DATABASE LEVEL) ──
     try:
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
         raw_db = load_db(category=cat, now_iso=now_iso) 
         total_in_db = len(raw_db)
         
@@ -87,10 +91,8 @@ async def get_news(
             # 2. Filter pool based on window
             db = [a for a in db if _get_dt(a) >= explore_window]
         
-        if cat in ['home', 'all']:
-            pool = db
-        else:
-            pool = [a for a in db if str(a.get('category', '')).lower() == cat.lower()]
+        # Everything is now a single unified pool
+        pool = db
             
         # 3. Explore Highlight Filter: Filter the final pool if on Explore
         if screen.lower() == 'explore' and len(pool) > 50:

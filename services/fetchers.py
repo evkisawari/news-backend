@@ -218,12 +218,12 @@ async def sync_category(category: str, client: httpx.AsyncClient) -> List[Dict]:
 async def sync_all_categories():
     from dotenv import load_dotenv
     load_dotenv()
-    print('[CRON] ── Starting Robust Standardized Sync ──')
+    print('[CRON] -- Starting Robust Standardized Sync --')
     try:
         async with httpx.AsyncClient(headers=_HTTP_HEADERS, follow_redirects=True) as client:
             all_articles = []
             for cat in CATEGORIES:
-                print(f"[CRON] ── Syncing: {cat.upper()} ──")
+                print(f"[CRON] -- Syncing: {cat.upper()} --")
                 results = []
                 
                 # Source 1: GNews (Best for Top Stories)
@@ -260,7 +260,7 @@ async def sync_all_categories():
             final.sort(key=lambda x: (x.get('_score', 0), x.get('publishedAt', '')), reverse=True)
             
             save_db(final, sort=False)
-            print(f'[CRON] ── Finished. {len(final)} articles stored in PostgreSQL. ──')
+            print(f'[CRON] -- Finished. {len(final)} articles stored in PostgreSQL. --')
     except Exception as e:
         print(f"[GLOBAL SYNC ERROR] {e}")
         traceback.print_exc()

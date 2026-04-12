@@ -5,19 +5,13 @@ services/config.py — All constants, source definitions, and mappings.
 # ──────────────────────────────────────────────
 # CATEGORIES
 # ──────────────────────────────────────────────
-CATEGORIES = [
-    'national', 'business', 'sports', 'world', 'technology', 
-    'startup', 'entertainment', 'science', 'automobile', 'politics'
-]
+CATEGORIES = ['all', 'politics', 'war', 'world', 'entertainment', 'lifestyle', 'science', 'technology', 'business']
 
 CATEGORY_ALIASES = {
-    'us':           'national',
-    'nation':       'national',
-    'breaking-news':'all',
-    'finance':      'business',
-    'tech':         'technology',
-    'auto':         'automobile',
-    'general':      'national',
+    'international': 'world',
+    'global':        'world',
+    'tech':          'technology',
+    'biz':           'business'
 }
 
 # ──────────────────────────────────────────────
@@ -28,6 +22,7 @@ NEWSDATA_CATEGORIES = {
     'world':      {'category': 'world',       'country': ''},
     'technology': {'category': 'technology',  'country': ''},
     'business':   {'category': 'business',    'country': ''},
+    'politics':   {'category': 'politics',    'country': ''},
     'lifestyle':  {'category': 'lifestyle',   'country': ''},
     'science':    {'category': 'science',     'country': ''},
     'entertainment': {'category': 'entertainment', 'country': ''},
@@ -40,6 +35,7 @@ GNEWS_TOPICS = {
     'world':      'world',
     'technology': 'technology',
     'business':   'business',
+    'politics':   'world',
     'lifestyle':  'entertainment',
     'science':    'science',
     'entertainment': 'entertainment',
@@ -73,13 +69,20 @@ SOURCE_WEIGHTS: dict = {
     'Forbes':          1.2,
     'Hacker News':     1.1,
     'New Scientist':   1.2,
+    'Times of India':  1.4,
+    'NDTV':            1.4,
+    'The Hindu':       1.4,
+    'Hindustan Times': 1.3,
+    'News18':          1.2,
+    'NY Post':         1.2,
 }
 
 BOOST_KEYWORDS: dict = {
     'world':      ['war', 'crisis', 'election', 'conflict', 'sanctions', 'diplomacy', 'military', 'ceasefire', 'attack', 'strike'],
     'business':   ['market', 'crash', 'inflation', 'fed', 'recession', 'earnings', 'stocks', 'oil', 'tariff', 'economy'],
     'technology': ['ai', 'hack', 'breach', 'breakthrough', 'regulation', 'ban', 'launch', 'robot', 'openai', 'chatgpt'],
-    'lifestyle':  ['health', 'recall', 'breakthrough', 'study', 'diet', 'wellness', 'trend', 'cancer', 'food'],
+    'lifestyle':  ['health', 'recall', 'breakthrough', 'study', 'diet', 'wellness', 'trend', 'cancer', 'food', 'travel', 'fashion'],
+    'politics':   ['election', 'policy', 'senate', 'governor', 'democrats', 'republicans', 'vote', 'law', 'legislation', 'parliament'],
     'us':         ['president', 'congress', 'supreme court', 'fda', 'shooting', 'trump', 'white house', 'senate', 'election'],
     'science':    ['discovery', 'research', 'study', 'climate', 'space', 'nasa', 'breakthrough', 'mission', 'planet'],
 }
@@ -93,7 +96,6 @@ RSS_SOURCES: list = [
     {'name': 'AP News',        'url': 'https://apnews.com/apf-topnews?format=xml',                     'category': 'world',      'weight': 1.5},
     {'name': 'The Guardian',   'url': 'https://www.theguardian.com/world/rss',                         'category': 'world',      'weight': 1.3},
     {'name': 'CNN',            'url': 'http://rss.cnn.com/rss/edition.rss',                            'category': 'world',      'weight': 1.2},
-    {'name': 'Google News India', 'url': 'https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en',      'category': 'world',      'weight': 1.1},
     {'name': 'Google News Global', 'url': 'https://news.google.com/rss/search?q=USA+world+news&hl=en-US&gl=US&ceid=US:en', 'category': 'world', 'weight': 1.0},
     {'name': 'Middle East News',   'url': 'https://rss.app/feeds/DWxdxmyhM766QPLs.xml',                  'category': 'world',      'weight': 1.4},
     {'name': 'NYT World',          'url': 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',        'category': 'world',      'weight': 1.4},
@@ -101,14 +103,23 @@ RSS_SOURCES: list = [
     {'name': 'NYT',            'url': 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',     'category': 'us',         'weight': 1.5},
     {'name': 'Fox News',       'url': 'https://moxie.foxnews.com/google-publisher/latest.xml',         'category': 'us',         'weight': 1.2},
     {'name': 'Google News US', 'url': 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en',        'category': 'us',         'weight': 1.0},
-    {'name': 'Google News Politics', 'url': 'https://news.google.com/rss/search?q=US+politics&hl=en-US&gl=US&ceid=US:en', 'category': 'us', 'weight': 1.1},
-    {'name': 'NYT Politics',   'url': 'https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml' ,      'category': 'us',         'weight': 1.4},
+    {'name': 'Google News Politics', 'url': 'https://news.google.com/rss/search?q=US+politics&hl=en-US&gl=US&ceid=US:en', 'category': 'politics', 'weight': 1.1},
+    {'name': 'NYT Politics',   'url': 'https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml' ,      'category': 'politics',         'weight': 1.4},
+    {'name': 'The Hill Politics',   'url': 'https://thehill.com/homenews/politics/feed/',                'category': 'politics',         'weight': 1.3},
+    {'name': 'Politico',            'url': 'https://www.politico.com/rss/politicopicks.xml',             'category': 'politics',         'weight': 1.5},
+    {'name': 'NY Post',        'url': 'https://nypost.com/feed/',                                     'category': 'us',               'weight': 1.2},
     # Technology
     {'name': 'TechCrunch',     'url': 'https://techcrunch.com/feed/',                                  'category': 'technology', 'weight': 1.4},
     {'name': 'The Verge',      'url': 'https://www.theverge.com/rss/index.xml',                        'category': 'technology', 'weight': 1.3},
     {'name': 'Wired',          'url': 'https://www.wired.com/feed/rss',                                'category': 'technology', 'weight': 1.3},
     # 🌟 PREMIUM NEW SOURCES (Inshorts & HackerNews)
     {'name': 'Inshorts National', 'url': 'https://inshortsrss.vercel.app/news/topics/national', 'category': 'national',    'weight': 1.5},
+    {'name': 'Google News India', 'url': 'https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en',      'category': 'national',   'weight': 1.3},
+    {'name': 'TOI National',     'url': 'https://timesofindia.indiatimes.com/rssfeeds/4719157.cms',    'category': 'national',   'weight': 1.4},
+    {'name': 'NDTV National',    'url': 'https://feeds.feedburner.com/NDTV-LatestNews',               'category': 'national',   'weight': 1.4},
+    {'name': 'The Hindu Nat',    'url': 'https://www.thehindu.com/feeder/default.rss',                'category': 'national',   'weight': 1.4},
+    {'name': 'News18 National',  'url': 'https://www.news18.com/commonfeeds/v1/eng/rss/latest.xml',     'category': 'national',   'weight': 1.2},
+    {'name': 'HT National',      'url': 'https://www.hindustantimes.com/rss',                         'category': 'national',   'weight': 1.3},
     {'name': 'Inshorts Business', 'url': 'https://inshortsrss.vercel.app/news/topics/business', 'category': 'business',    'weight': 1.5},
     {'name': 'Inshorts Sports',   'url': 'https://inshortsrss.vercel.app/news/topics/sports',   'category': 'sports',      'weight': 1.5},
     {'name': 'Inshorts Startup',  'url': 'https://inshortsrss.vercel.app/news/topics/startup',  'category': 'startup',     'weight': 1.5},
@@ -157,12 +168,7 @@ RSS_SOURCES: list = [
 # ──────────────────────────────────────────────
 # If guest or low-engagement user, use these starting points
 DEFAULT_CATEGORY_PRIORITY = {
-    'world':      0.80,
-    'us':         0.80,
-    'science':    0.50,
-    'technology': 0.50,
-    'business':   0.30,
-    'lifestyle':  0.30,
+    'all': 1.0
 }
 
 # Applied regardless of category if title contains these
